@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>產品圖片搜尋工具</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>📷 產品圖片搜尋工具</h1>
+            <p class="subtitle">自動搜尋高清圖片，支援批量導入，輸出圖片 URL</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="single">單一搜尋</button>
+            <button class="tab-btn" data-tab="batch">批量搜尋</button>
+            <button class="tab-btn" data-tab="history">搜尋記錄</button>
+        </div>
+
+        <!-- 單一搜尋標籤 -->
+        <div id="single" class="tab-content active">
+            <div class="search-section">
+                <div class="input-group">
+                    <input type="text" id="productInput" placeholder="輸入產品名稱（如：Apple iPhone 15 Pro）" class="search-input">
+                    <button id="searchBtn" class="btn btn-primary">🔍 搜尋</button>
+                </div>
+
+                <div id="singleResults" class="results-container"></div>
+            </div>
+        </div>
+
+        <!-- 批量搜尋標籤 -->
+        <div id="batch" class="tab-content">
+            <div class="batch-section">
+                <div class="upload-area" id="uploadArea">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h3>拖拽或點擊上傳 Excel 文件</h3>
+                    <p>支援 .xlsx 和 .xls 格式</p>
+                    <input type="file" id="excelFile" accept=".xlsx,.xls" hidden>
+                </div>
+
+                <div id="batchProducts" class="batch-products"></div>
+
+                <div id="batchResults" class="results-container"></div>
+
+                <div class="action-buttons">
+                    <button id="batchSearchBtn" class="btn btn-primary" style="display:none;">🔍 批量搜尋</button>
+                    <button id="exportBtn" class="btn btn-success" style="display:none;">📊 匯出結果</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 搜尋記錄標籤 -->
+        <div id="history" class="tab-content">
+            <div class="history-section">
+                <div class="history-controls">
+                    <button id="clearHistoryBtn" class="btn btn-secondary">🗑️ 清空記錄</button>
+                </div>
+                <div id="historyList" class="history-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 進度指示器 -->
+    <div id="loadingBar" class="loading-bar">
+        <div class="progress"></div>
+    </div>
+
+    <!-- 通知信息 -->
+    <div id="notification" class="notification"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
