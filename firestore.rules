@@ -15,13 +15,31 @@ service cloud.firestore {
       allow write: if false;
     }
     match /members/{uid} {
-      allow read:  if request.auth != null && (request.auth.uid == uid || isAdmin());
-      allow write: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow read:   if isAuth() && (request.auth.uid == uid || isAdmin());
+      // 管理員可完整管理；本人建立會員時只能拿固定歡迎點數，無法自行灌點
+      allow create: if isAdmin()
+                    || (isAuth() && request.auth.uid == uid
+                        && request.resource.data.points <= 10
+                        && request.resource.data.totalSpent == 0
+                        && request.resource.data.tier == 'normal');
+      // 本人更新：僅能改個資與折抵相關欄位，且點數只能減少、不可變負，
+      // 不可竄改 totalSpent / tier / pointsPending 等敏感欄位。
+      // 集點與後台給點走 Cloud Function / 管理員(Admin SDK 與 isAdmin 不受此限)。
+      allow update: if isAdmin()
+                    || (isAuth() && request.auth.uid == uid
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['name','birthday','points','redeemCount','deductedPts','updatedAt'])
+                        && request.resource.data.points <= resource.data.points
+                        && request.resource.data.points >= 0);
+      allow delete: if isAdmin();
     }
     match /point_batches/{batchId} {
       allow read:   if request.auth != null && (isAdmin() || (resource != null && resource.data.uid == request.auth.uid));
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && (isAdmin() || (resource != null && resource.data.uid == request.auth.uid));
+      // 批次僅由 Cloud Function / 管理員建立；本人只能在折抵時「減少」自己的 remaining
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+                    || (isAuth() && resource != null && resource.data.uid == request.auth.uid
+                        && request.resource.data.remaining <= resource.data.remaining);
       allow delete: if false;
     }
     match /settings/{docId} {
@@ -30,7 +48,11 @@ service cloud.firestore {
     }
     match /transactions/{txId} {
       allow read:   if request.auth != null && (isAdmin() || (resource != null && resource.data.uid == request.auth.uid) || (resource != null && resource.data.type == 'earn'));
-      allow create: if request.auth != null;
+      // 本人僅能新增自己的 welcome / deduct 紀錄；earn / redeem 由後端函式或管理員建立，
+      // 避免會員偽造集點紀錄灌排行榜。
+      allow create: if isAdmin()
+                    || (isAuth() && request.resource.data.uid == request.auth.uid
+                        && (request.resource.data.type == 'welcome' || request.resource.data.type == 'deduct'));
       allow update, delete: if false;
     }
     match /qr_tokens/{tokenId} {
