@@ -360,8 +360,15 @@ window.handleCompleteRegister = async function() {
       descEn: 'Welcome bonus points',
       createdAt: serverTimestamp(),
     });
-    setMsg(msgEl,t('✅ 加入成功！','✅ Success!'),'success');
-    // onAuthStateChanged 接手，自動進入 APP
+    // 註冊成功後登出本次階段，回到登入首頁，讓新會員以手機＋密碼登入
+    const newPhone = regPhone;
+    await signOut(auth);
+    showView('login');
+    const phoneInput = document.getElementById('inp-phone');
+    if (phoneInput) phoneInput.value = newPhone;
+    const pwInput = document.getElementById('inp-password');
+    if (pwInput) pwInput.value = '';
+    setMsg(document.getElementById('login-msg'), t('✅ 註冊成功！請用手機號碼與密碼登入','✅ Registered! Please sign in with your phone & password'), 'success');
   } catch(e) {
     console.error('handleCompleteRegister:', e.code, e.message);
     const m = {
