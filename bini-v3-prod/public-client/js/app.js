@@ -523,38 +523,49 @@ async function loadMonthRank() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // 本月集點次數（自己的交易）
-    const q = query(
+    // 讀全體 earn 交易（Firestore rules 允許任何登入者讀 type==='earn'），
+    // 於前端篩出本月並即時計算排名，不依賴後端是否寫入 monthlyRank。
+    const snap = await getDocs(query(
       collection(db, 'transactions'),
-      where('uid', '==', currentUser.uid),
-      where('type', '==', 'earn'),
-      where('createdAt', '>=', Timestamp.fromDate(monthStart))
-    );
-    const snap = await getDocs(q);
-    const myTxCount = snap.size;
+      where('type', '==', 'earn')
+    ));
 
-    // 排名：從 members 文件讀取後端計算好的排名
-    const memberSnap = await getDoc(doc(db, 'members', currentUser.uid));
-    const memberData = memberSnap.data() || {};
-    const rank      = memberData.monthlyRank;
-    const total     = memberData.monthlyTotal;
-    const monthPts  = memberData.monthlyPts;
+    // 加總每位會員本月點數（與後端 updateMonthlyRanks 相同邏輯）
+    const monthPts = {};
+    let myTxCount = 0;
+    snap.forEach(d => {
+      const tx = d.data();
+      const created = tx.createdAt?.toDate?.();
+      if (!tx.uid || !created || created < monthStart) return;
+      monthPts[tx.uid] = Math.round(((monthPts[tx.uid] || 0) + (tx.points || 0)) * 10) / 10;
+      if (tx.uid === currentUser.uid) myTxCount++;
+    });
+
+    // 依點數高到低排序，計算名次（同分同名）
+    const sorted = Object.entries(monthPts).sort((a, b) => b[1] - a[1]);
+    const total  = sorted.length;
+    let myRank = null, rank = 1;
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i][1] < sorted[i - 1][1]) rank = i + 1;
+      if (sorted[i][0] === currentUser.uid) { myRank = rank; break; }
+    }
+    const myPts = monthPts[currentUser.uid] || 0;
 
     const rankEl  = document.getElementById('hero-rank');
     const countEl = document.getElementById('hero-month-count');
 
     if (rankEl) {
-      if (rank != null && total != null) {
-        // 顯示名次，例如「第 3 名 / 28 人」
-        rankEl.innerHTML = `#${rank}<span style="font-size:12px;opacity:.7"> / ${total}</span>`;
-      } else if (monthPts != null && monthPts > 0) {
-        rankEl.textContent = monthPts + ' pts';
+      if (myRank != null && total > 0) {
+        // 顯示名次，例如「#3 / 28」
+        rankEl.innerHTML = `#${myRank}<span style="font-size:12px;opacity:.7"> / ${total}</span>`;
+      } else if (myPts > 0) {
+        rankEl.textContent = myPts + ' pts';
       } else {
         rankEl.textContent = '—';
       }
     }
     if (countEl) countEl.textContent = myTxCount;
-  } catch(e) { console.log('loadMonthRank:', e.code || e.message); }
+  } catch(e) { console.warn('loadMonthRank failed:', e.code || e.message); }
 }
 
 async function loadExpiryInfo() {
