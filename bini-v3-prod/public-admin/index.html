@@ -49,10 +49,12 @@ input:focus,textarea:focus{border-color:var(--pink)}
 .top-name{font-size:21px;font-weight:800;color:#fff;letter-spacing:.3px}
 .top-actions{display:flex;align-items:center;gap:6px}
 .lang-sw{display:flex;background:rgba(255,255,255,.15);border-radius:10px;padding:2px}
-.lang-sw button{padding:4px 9px;border:none;border-radius:8px;font-size:17px;font-weight:600;cursor:pointer}
+.lang-sw button{padding:4px 9px;border:none;border-radius:8px;font-size:17px;font-weight:600;cursor:pointer;transition:background .25s ease,color .25s ease}
 .lang-sw .act{background:rgba(255,255,255,.9);color:var(--dark)}
 .lang-sw .inact{background:transparent;color:rgba(255,255,255,.7)}
-.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:17px;cursor:pointer;font-weight:600}
+.btn-logout{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:5px 11px;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s ease,transform .1s ease}
+.btn-logout svg{width:16px;height:16px}
+.btn-logout:active{transform:scale(.94);background:rgba(255,255,255,.28)}
 .tab-row{display:flex;overflow-x:auto;scrollbar-width:none}
 .tab-row::-webkit-scrollbar{display:none}
 .tab-btn{flex-shrink:0;padding:9px 9px;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.5);font-size:16px;font-weight:600;cursor:pointer;white-space:nowrap}
@@ -205,7 +207,10 @@ input:focus,textarea:focus{border-color:var(--pink)}
           <button id="slbtn-zh" class="act" onclick="shopSetLang('zh')">中</button>
           <button id="slbtn-en" class="inact" onclick="shopSetLang('en')">EN</button>
         </div>
-        <button class="btn-logout" onclick="handleAdminLogout()"><span data-zh="登出" data-en="Sign Out">登出</span></button>
+        <button class="btn-logout" onclick="handleAdminLogout()">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M18 15l3-3m0 0l-3-3m3 3H9"/></svg>
+          <span data-zh="登出" data-en="Sign Out">登出</span>
+        </button>
       </div>
     </div>
     <!-- Banner 圖片 -->
@@ -286,7 +291,7 @@ input:focus,textarea:focus{border-color:var(--pink)}
     <div class="card" style="margin-top:12px">
       <div class="card-title"><span data-zh="今日統計" data-en="Today's Stats">今日統計</span></div>
       <div class="stats-row">
-        <div class="stat-box"><div class="stat-lbl"><span data-zh="集點次數" data-en="Scans">集點次數</span></div><div class="stat-val" id="stat-count">—</div></div>
+        <div class="stat-box"><div class="stat-lbl"><span data-zh="集點次數" data-en="Scans">集點次數</span></div><div class="stat-val" id="stat-count-card">—</div></div>
         <div class="stat-box"><div class="stat-lbl"><span data-zh="總消費" data-en="Total Sales">總消費</span></div><div class="stat-val" id="stat-sales">—</div></div>
       </div>
     </div>

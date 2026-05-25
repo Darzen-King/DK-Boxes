@@ -452,13 +452,17 @@ async function loadStats(){
       where('createdAt','>=',Timestamp.fromDate(t0)),
       where('createdAt','<',Timestamp.fromDate(t1))
     ));
-    let tot=0, cnt=0;
+    let tot=0, cnt=0, pts=0;
     snap.forEach(d=>{
       const tx=d.data();
-      if(tx.type==='earn'){ tot+=(tx.amount||0); cnt++; }
+      if(tx.type==='earn'){ tot+=(tx.amount||0); cnt++; pts+=(tx.points||0); }
     });
-    document.getElementById('stat-count').textContent=cnt;
-    document.getElementById('stat-sales').textContent='NT$'+tot.toLocaleString();
+    const ptsStr=Number.isInteger(pts)?pts.toLocaleString():pts.toFixed(1);
+    const set=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+    set('stat-count',cnt);                              // 今日集點（次）
+    set('stat-pts',ptsStr);                             // 今日送點（點）
+    set('stat-count-card',cnt);                         // 今日統計：集點次數
+    set('stat-sales','NT$'+tot.toLocaleString());       // 今日統計：總消費
   } catch(e){ console.error('loadStats:',e); }
 }
 
