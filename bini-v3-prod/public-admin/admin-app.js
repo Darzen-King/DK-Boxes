@@ -444,49 +444,93 @@ async function loadStats(){
 }
 
 // ── 資料分析 ──
+// 時段選擇：本月為預設，避免數字無止盡累積、失去參考價值
+let _analyticsData=null, _analyticsPeriod='month';
+function periodStartDate(period){
+  const now=new Date();
+  switch(period){
+    case 'today':{ const d=new Date(now); d.setHours(0,0,0,0); return d; }
+    case '7d':   { const d=new Date(now); d.setDate(d.getDate()-6);  d.setHours(0,0,0,0); return d; }
+    case '30d':  { const d=new Date(now); d.setDate(d.getDate()-29); d.setHours(0,0,0,0); return d; }
+    case 'month':return new Date(now.getFullYear(), now.getMonth(), 1);
+    case 'year': return new Date(now.getFullYear(), 0, 1);
+    default:     return null; // all：全部，不設起始
+  }
+}
+
 async function loadAnalytics(){
   window._loadAnalyticsRunning = true;
   const el=document.getElementById('analytics-content'); el.innerHTML=t('<p style="text-align:center;color:#888;padding:20px">載入中...</p>','<p style="text-align:center;color:#888;padding:20px">Loading...</p>');
   try{
-    // 會員總覽 — 所有查詢都用單一條件或無條件，避免需要複合索引
+    // 一次抓回，後續切換時段都在前端過濾，不需重新查詢
     const [memberSnap,txSnap,batchSnap]=await Promise.all([
       getDocs(collection(db,'members')),
       getDocs(collection(db,'transactions')),
       getDocs(collection(db,'point_batches'))   // 全部取回，前端過濾 remaining > 0
     ]);
-    let totalSpent=0,totalPts=0,earnCount=0,deductCount=0;
+    const members=[]; memberSnap.forEach(d=>{ const m=d.data(); members.push({tier:m.tier||'normal', joinedAt:m.joinedAt?.toDate?.()||null}); });
+    const txs=[];     txSnap.forEach(d=>{ const tx=d.data(); txs.push({type:tx.type, points:tx.points||0, amount:tx.amount||0, at:tx.createdAt?.toDate?.()||null}); });
+    let activePts=0;  batchSnap.forEach(d=>{ const b=d.data(); const rem=(b.points||0)-(b.consumed||0); if(rem>0) activePts+=rem; });
     const tierCount={normal:0,vip:0,vvip:0,vvvip:0};
-    memberSnap.forEach(d=>{ const m=d.data(); totalSpent+=(m.totalSpent||0); tierCount[m.tier||'normal']=(tierCount[m.tier||'normal']||0)+1; });
-    txSnap.forEach(d=>{ const tx=d.data(); if(tx.type==='earn'){totalPts+=tx.points;earnCount++;} else if(tx.type==='deduct')deductCount++; });
-    let activePts=0; batchSnap.forEach(d=>{ const b=d.data(); const rem=(b.points||0)-(b.consumed||0); if(rem>0) activePts+=rem; });
+    members.forEach(m=>{ tierCount[m.tier]=(tierCount[m.tier]||0)+1; });
 
-    // 近7天日報表
-    const daily={}; const now=new Date();
-    for(let i=6;i>=0;i--){ const d=new Date(now); d.setDate(d.getDate()-i); d.setHours(0,0,0,0); daily[d.toLocaleDateString('zh-TW')]=0; }
-    txSnap.forEach(d=>{ const tx=d.data(); if(tx.type!=='earn') return; if(!tx.createdAt) return; const ds=tx.createdAt.toDate().toLocaleDateString('zh-TW'); if(ds in daily) daily[ds]+=(tx.amount||0); });
-
-    el.innerHTML=`
-      <div class="analytics-grid">
-        <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'會員總數':'Members'}</div><div class="analytics-val">${memberSnap.size}</div></div>
-        <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'總消費金額':'Total Sales'}</div><div class="analytics-val">NT$${totalSpent.toLocaleString()}</div></div>
-        <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'累積點數':'Total Points'}</div><div class="analytics-val">${totalPts.toLocaleString()}</div></div>
-        <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'流通中點數':'Active Points'}</div><div class="analytics-val">${activePts.toLocaleString()}</div></div>
-        <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'集點次數':'Transactions'}</div><div class="analytics-val">${earnCount}</div></div>
-        <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'折抵次數':'Redemptions'}</div><div class="analytics-val">${deductCount}</div></div>
-      </div>
-      <div class="analytics-section-title">${shopLang==='zh'?'會員等級分布':'Member Tiers'}</div>
-      <div class="analytics-grid">
-        ${TIERS.map(ti=>`<div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?ti.name:ti.nameEn}</div><div class="analytics-val">${tierCount[ti.id]||0}</div></div>`).join('')}
-      </div>
-      <div class="analytics-section-title">${shopLang==='zh'?'近7天消費金額':'Last 7 Days Sales'}</div>
-      <table class="analytics-table">
-        <tr><th>${shopLang==='zh'?'日期':'Date'}</th><th>${shopLang==='zh'?'消費金額':'Sales'}</th></tr>
-        ${Object.entries(daily).map(([d,v])=>`<tr><td>${d}</td><td>NT$${v.toLocaleString()}</td></tr>`).join('')}
-      </table>
-      <button class="btn btn-primary" onclick="exportExcel()" style="margin-top:14px" data-zh="📊 匯出報表 (CSV)" data-en="📊 Export Report (CSV)">${shopLang==='zh'?'📊 匯出 Excel 報表':'📊 Export Report'}</button>`;
+    _analyticsData={ members, txs, activePts, tierCount, memberCount:memberSnap.size };
+    renderAnalytics();
   } catch(e){ console.error(e); el.innerHTML=`<p style="text-align:center;color:#c0392b;padding:20px">載入失敗：${e.message}</p>`; }
 }
+
+function renderAnalytics(){
+  const el=document.getElementById('analytics-content'); if(!el||!_analyticsData) return;
+  const { members, txs, activePts, tierCount, memberCount } = _analyticsData;
+  const start = periodStartDate(_analyticsPeriod);
+  const inRange = at => !start || (at && at>=start);
+
+  // 本期（依時段過濾）營運數據
+  let periodSales=0, periodPts=0, earnCount=0, deductCount=0;
+  txs.forEach(tx=>{
+    if(!inRange(tx.at)) return;
+    if(tx.type==='earn'){ periodSales+=tx.amount; periodPts+=tx.points; earnCount++; }
+    else if(tx.type==='deduct') deductCount++;
+  });
+  periodPts=Math.round(periodPts*10)/10;
+  const newMembers = members.filter(m=>inRange(m.joinedAt)).length;
+
+  // 近7天日報表（固定，不受時段影響）
+  const daily={}; const now=new Date();
+  for(let i=6;i>=0;i--){ const d=new Date(now); d.setDate(d.getDate()-i); d.setHours(0,0,0,0); daily[d.toLocaleDateString('zh-TW')]=0; }
+  txs.forEach(tx=>{ if(tx.type!=='earn'||!tx.at) return; const ds=tx.at.toLocaleDateString('zh-TW'); if(ds in daily) daily[ds]+=tx.amount; });
+
+  const periods=[['today','今日','Today'],['7d','近7天','7 Days'],['30d','近30天','30 Days'],['month','本月','This Month'],['year','本年','This Year'],['all','全部','All']];
+  const btns=periods.map(([p,zh,en])=>`<button class="period-btn${p===_analyticsPeriod?' active':''}" onclick="setAnalyticsPeriod('${p}')">${shopLang==='zh'?zh:en}</button>`).join('');
+
+  el.innerHTML=`
+    <div class="period-selector">${btns}</div>
+    <div class="analytics-section-title">${shopLang==='zh'?'本期營運數據':'Period Stats'}</div>
+    <div class="analytics-grid">
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'消費金額':'Sales'}</div><div class="analytics-val">NT$${periodSales.toLocaleString()}</div></div>
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'發出點數':'Points Issued'}</div><div class="analytics-val">${periodPts.toLocaleString()}</div></div>
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'集點次數':'Transactions'}</div><div class="analytics-val">${earnCount}</div></div>
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'折抵次數':'Redemptions'}</div><div class="analytics-val">${deductCount}</div></div>
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'新增會員':'New Members'}</div><div class="analytics-val">${newMembers}</div></div>
+    </div>
+    <div class="analytics-section-title">${shopLang==='zh'?'目前狀態（全部）':'Current Status (All)'}</div>
+    <div class="analytics-grid">
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'會員總數':'Members'}</div><div class="analytics-val">${memberCount}</div></div>
+      <div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?'流通中點數':'Active Points'}</div><div class="analytics-val">${activePts.toLocaleString()}</div></div>
+    </div>
+    <div class="analytics-section-title">${shopLang==='zh'?'會員等級分布':'Member Tiers'}</div>
+    <div class="analytics-grid">
+      ${TIERS.map(ti=>`<div class="analytics-card"><div class="analytics-label">${shopLang==='zh'?ti.name:ti.nameEn}</div><div class="analytics-val">${tierCount[ti.id]||0}</div></div>`).join('')}
+    </div>
+    <div class="analytics-section-title">${shopLang==='zh'?'近7天消費金額':'Last 7 Days Sales'}</div>
+    <table class="analytics-table">
+      <tr><th>${shopLang==='zh'?'日期':'Date'}</th><th>${shopLang==='zh'?'消費金額':'Sales'}</th></tr>
+      ${Object.entries(daily).map(([d,v])=>`<tr><td>${d}</td><td>NT$${v.toLocaleString()}</td></tr>`).join('')}
+    </table>
+    <button class="btn btn-primary" onclick="exportExcel()" style="margin-top:14px" data-zh="📊 匯出報表 (CSV)" data-en="📊 Export Report (CSV)">${shopLang==='zh'?'📊 匯出 Excel 報表':'📊 Export Report'}</button>`;
+}
 window.loadAnalytics = loadAnalytics; // expose 給 admin-shop.js 的 switchTab 覆寫版呼叫
+window.setAnalyticsPeriod = function(p){ _analyticsPeriod=p; renderAnalytics(); };
 
 // ── 匯出 Excel ──
 window.exportExcel=async function(){
