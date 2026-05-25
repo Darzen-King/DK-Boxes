@@ -474,22 +474,34 @@ input:focus,textarea:focus{border-color:var(--pink)}
 
       <!-- 開發工具 -->
       <div class="card" style="border:1.5px dashed #e0a0b0">
-        <div class="card-title" style="color:#c0392b">⚠️ <span data-zh="清除測試資料" data-en="Clear Test Data">清除測試資料</span></div>
+        <div class="card-title" style="color:#c0392b">⚠️ <span data-zh="刪除資料（不可回復）" data-en="Delete Data (Irreversible)">刪除資料（不可回復）</span></div>
         <p style="font-size:13px;color:#888;margin-bottom:12px">
           <span data-zh="清除所有公告、廣播、客服訊息及測試商品。此操作不可復原，請確認後執行。" data-en="Delete all announcements, broadcasts, chat messages and test products. This cannot be undone.">清除所有公告、廣播、客服訊息及測試商品。此操作不可復原，請確認後執行。</span>
         </p>
-        <button onclick="clearTestData('announcements')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
-          🗑️ <span data-zh="清除所有公告" data-en="Clear All Announcements">清除所有公告</span>
-        </button>
-        <button onclick="clearTestData('broadcasts')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
-          🗑️ <span data-zh="清除所有廣播" data-en="Clear All Broadcasts">清除所有廣播</span>
-        </button>
-        <button onclick="clearTestData('chats')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
-          🗑️ <span data-zh="清除所有客服訊息" data-en="Clear All Chat Messages">清除所有客服訊息</span>
-        </button>
-        <button onclick="clearTestProducts()" class="btn" style="width:100%;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
-          🗑️ <span data-zh="清除所有測試商品" data-en="Clear Test Products">清除所有測試商品</span>
-        </button>
+
+        <!-- 密碼鎖：需輸入密碼才會顯示刪除按鈕，避免誤按 -->
+        <div id="clear-data-lock">
+          <input type="password" id="clear-data-pw" autocomplete="off" placeholder="輸入密碼 / Password" style="width:100%;padding:11px 13px;border:1.5px solid #e0a0b0;border-radius:10px;font-size:16px;margin-bottom:8px;box-sizing:border-box">
+          <button onclick="unlockClearData()" class="btn" style="width:100%;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🔓 <span data-zh="解鎖刪除功能" data-en="Unlock">解鎖刪除功能</span>
+          </button>
+        </div>
+
+        <!-- 刪除按鈕：預設隱藏，解鎖後顯示 -->
+        <div id="clear-data-tools" style="display:none">
+          <button onclick="clearTestData('announcements')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有公告" data-en="Clear All Announcements">清除所有公告</span>
+          </button>
+          <button onclick="clearTestData('broadcasts')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有廣播" data-en="Clear All Broadcasts">清除所有廣播</span>
+          </button>
+          <button onclick="clearTestData('chats')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有客服訊息" data-en="Clear All Chat Messages">清除所有客服訊息</span>
+          </button>
+          <button onclick="clearTestProducts()" class="btn" style="width:100%;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有測試商品" data-en="Clear Test Products">清除所有測試商品</span>
+          </button>
+        </div>
         <div id="clear-data-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
       </div>
     </div>

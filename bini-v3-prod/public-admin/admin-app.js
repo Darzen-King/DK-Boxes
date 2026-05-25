@@ -872,6 +872,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── 清除測試資料 ─────────────────────────────
+// 隱藏功能：需輸入密碼才顯示刪除按鈕，避免誤按
+const CLEAR_DATA_PASSWORD = 'yellowtaxi328';
+window.unlockClearData = function() {
+  const input = document.getElementById('clear-data-pw');
+  const msg = document.getElementById('clear-data-msg');
+  if ((input?.value || '') !== CLEAR_DATA_PASSWORD) {
+    if (msg) { msg.textContent = t('密碼錯誤','Wrong password'); msg.style.color = '#c0392b'; }
+    return;
+  }
+  document.getElementById('clear-data-lock').style.display = 'none';
+  document.getElementById('clear-data-tools').style.display = '';
+  if (input) input.value = '';
+  if (msg) msg.textContent = '';
+};
+
 window.clearTestData = async function(collectionName) {
   const msg = document.getElementById('clear-data-msg');
   const label = { announcements:'公告', broadcasts:'廣播', chats:'客服訊息' }[collectionName] || collectionName;
