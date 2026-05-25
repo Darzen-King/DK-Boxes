@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BINI Blooms">
+<meta name="application-name" content="BINI Blooms">
+<meta name="theme-color" content="#3d0c1a">
+<title>BINI Blooms 會員集點</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-512.png?v=10">
+<link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png?v=10">
+<link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png?v=10">
+<style>
+/* PWA Splash Screen 啟動畫面 */
+#splash-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: fixed; inset: 0; background: #ffffff; z-index: 9999;
+  transition: opacity .4s;
+}
+#splash-screen img { width: 140px; height: 140px; object-fit: contain; margin-bottom: 20px; border-radius: 28px; box-shadow: 0 4px 20px rgba(61,12,26,.12); }
+#splash-screen .splash-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 34px;
+  font-weight: 800; color: #3d0c1a; letter-spacing: 1px; margin-bottom: 8px;
+}
+#splash-screen .splash-sub {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 15px; color: #6B2737; letter-spacing: 2px;
+}
+#splash-screen.hide { opacity: 0; pointer-events: none; }
+/* ── Top Bar（與後台相同樣式）── */
+.top-row{display:flex;align-items:center;justify-content:space-between;padding-bottom:3px}
+.top-brand{display:flex;align-items:center;gap:8px}
+.top-logo{width:48px;height:48px;border-radius:10px;object-fit:contain;background:#fff;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.22)}
+.top-name{font-size:21px;font-weight:800;color:#fff;letter-spacing:.3px}
+.top-actions{display:flex;align-items:center;gap:6px}
+.lang-sw{display:flex;background:rgba(255,255,255,.15);border-radius:10px;padding:2px}
+.lang-sw button{padding:4px 9px;border:none;border-radius:8px;font-size:17px;font-weight:600;cursor:pointer}
+.lang-sw .act{background:rgba(255,255,255,.9);color:var(--brand)}
+.lang-sw .inact{background:transparent;color:rgba(255,255,255,.7)}
+.btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:17px;cursor:pointer;display:flex;align-items:center}
+</style>
+<link rel="stylesheet" href="/css/app.css">
+<script src="/js/jsQR.js"></script>
+  <link rel="stylesheet" href="css/shop.css">
+</head>
+<body>
+
+<!-- PWA 啟動畫面 -->
+<div id="splash-screen">
+  <img src="/icons/icon-512.png" alt="BINI Blooms" style="width:140px;height:140px;object-fit:cover;border-radius:28px;margin-bottom:20px">
+  <div class="splash-title">BINI Blooms</div>
+  <div class="splash-sub">美妝・服飾・進口商品</div>
+</div>
+
+<!-- ══ 登入畫面 ══ -->
+<div id="screen-login" class="screen active">
+  <div class="login-wrap">
+    <img src="/icons/logo.png" alt="BINI Blooms" class="login-logo">
+    <p class="login-sub" data-zh="美妝・服飾・進口商品" data-en="Beauty · Fashion · Imports">美妝・服飾・進口商品</p>
+    <div class="lang-toggle">
+      <button class="lang-btn active" onclick="setLang('zh')">中文</button>
+      <button class="lang-btn" onclick="setLang('en')">English</button>
+    </div>
+
+    <!-- 登入 -->
+    <div id="auth-login">
+      <div class="input-group">
+        <label data-zh="手機號碼" data-en="Phone Number">手機號碼</label>
+        <input type="tel" id="inp-phone" placeholder="09xxxxxxxx" maxlength="10" inputmode="numeric">
+      </div>
+      <div class="input-group">
+        <label data-zh="密碼" data-en="Password">密碼</label>
+        <input type="password" id="inp-password" placeholder="6位數以上" onkeydown="if(event.key==='Enter')handleSignIn()">
+      </div>
+      <button class="btn-primary" onclick="handleSignIn()">
+        <span data-zh="登入" data-en="Sign In">登入</span>
+      </button>
+      <button class="btn-secondary" onclick="showView('register')">
+        <span data-zh="首次使用？立即註冊" data-en="New user? Register">首次使用？立即註冊</span>
+      </button>
+      <button class="btn-link" onclick="handleForgotPwd()">
+        <span data-zh="忘記密碼？" data-en="Forgot password?">忘記密碼？</span>
+      </button>
+      <p id="login-msg" class="login-msg"></p>
+    </div>
+
+    <!-- 手機驗證（OTP） -->
+    <div id="auth-otp" style="display:none">
+      <p class="register-hint" data-zh="輸入手機簡訊驗證碼" data-en="Enter SMS Code">輸入手機簡訊驗證碼</p>
+      <p class="otp-hint" id="otp-hint-phone"></p>
+      <div class="input-group">
+        <label data-zh="6位數驗證碼" data-en="6-digit Code">6位數驗證碼</label>
+        <input type="text" id="inp-otp" placeholder="------" maxlength="6" inputmode="numeric" style="text-align:center;font-size:24px;font-weight:700;letter-spacing:8px" onkeydown="if(event.key==='Enter')handleVerifyOTP()">
+      </div>
+      <button class="btn-primary" onclick="handleVerifyOTP()">
+        <span data-zh="驗證" data-en="Verify">驗證</span>
+      </button>
+      <button class="btn-secondary" onclick="showView('register')">
+        <span data-zh="重新發送" data-en="Resend">重新發送</span>
+      </button>
+      <p id="otp-msg" class="login-msg"></p>
+      <div id="recaptcha-container"></div>
+    </div>
+
+    <!-- 填寫資料（新會員） -->
+    <div id="auth-profile" style="display:none">
+      <p class="register-hint" data-zh="填寫基本資料，完成加入會員" data-en="Fill in details to join">填寫基本資料，完成加入會員</p>
+      <div class="input-group">
+        <label data-zh="姓名" data-en="Name">姓名</label>
+        <input type="text" id="reg-name" placeholder="請輸入姓名">
+      </div>
+      <div class="input-group">
+        <label data-zh="生日" data-en="Birthday">生日</label>
+        <input type="date" id="reg-birthday">
+      </div>
+      <div class="input-group">
+        <label data-zh="設定密碼（6位數以上）" data-en="Set Password (6+ chars)">設定密碼（6位數以上）</label>
+        <input type="password" id="reg-password" placeholder="至少6個字元">
+      </div>
+      <div class="input-group">
+        <label data-zh="確認密碼" data-en="Confirm Password">確認密碼</label>
+        <input type="password" id="reg-password2" placeholder="再次輸入密碼">
+      </div>
+      <button class="btn-primary" onclick="handleCompleteRegister()">
+        <span data-zh="完成加入會員" data-en="Complete Registration">完成加入會員</span>
+      </button>
+      <p id="profile-msg" class="login-msg"></p>
+    </div>
+
+    <!-- 初始註冊（輸入手機，取得 OTP） -->
+    <div id="auth-register" style="display:none">
+      <p class="register-hint" data-zh="輸入手機號碼取得驗證碼" data-en="Enter phone to get OTP">輸入手機號碼取得驗證碼</p>
+      <div class="input-group">
+        <label data-zh="手機號碼" data-en="Phone Number">手機號碼</label>
+        <input type="tel" id="reg-phone" placeholder="09xxxxxxxx" maxlength="10" inputmode="numeric">
+      </div>
+      <div id="recaptcha-container-reg"></div>
+      <button class="btn-primary" onclick="handleSendOTP()">
+        <span data-zh="取得驗證碼" data-en="Get Verification Code">取得驗證碼</span>
+      </button>
+      <button class="btn-secondary" onclick="showView('login')">
+        <span data-zh="已有帳號？返回登入" data-en="Have account? Sign In">已有帳號？返回登入</span>
+      </button>
+      <p id="reg-msg" class="login-msg"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 主程式 ══ -->
+<div id="screen-app" class="screen">
+  <header class="top-bar" id="main-top-bar" style="padding:0;overflow:hidden">
+    <div class="top-row" style="padding:44px 14px 12px">
+      <!-- 首頁：LOGO + 品牌名；其他頁：頁面標題 -->
+      <div id="top-logo" class="top-brand">
+        <img src="/logo.png" alt="BINI" class="top-logo">
+        <div class="top-name">BINI Blooms</div>
+      </div>
+      <span id="top-title" style="display:none;font-size:21px;font-weight:800;color:#fff;letter-spacing:.3px;flex:1"></span>
+      <div class="top-actions">
+        <div class="lang-sw">
+          <button class="act" id="lbtn-zh" onclick="setLang('zh')">中</button>
+          <button class="inact" id="lbtn-en" onclick="setLang('en')">EN</button>
+        </div>
+        <button class="btn-logout" onclick="handleLogout()">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M18 15l3-3m0 0l-3-3m3 3H9"/></svg>
+        </button>
+      </div>
+    </div>
+    <!-- Banner 圖片 -->
+    <div style="width:100%;font-size:0;line-height:0;margin:0;padding:0">
+      <img src="/icons/banner.png" alt="BINI Blooms" style="width:100%;height:auto;display:block;object-fit:cover;margin:0;padding:0" onerror="this.style.display='none'">
+    </div>
+  </header>
+
+  <!-- 首頁 -->
+  <div class="page active" id="page-home">
+
+    <div class="hero-card" style="border-radius:0">
+      <!-- 名字 + 等級 -->
+      <div style="margin-bottom:14px">
+        <p class="hero-name" id="hero-name" style="font-size:22px"></p>
+        <p class="hero-id" id="hero-id" style="font-size:13px;opacity:.55;margin-top:2px"></p>
+        <p class="hero-tier" id="hero-tier" style="margin-top:8px"></p>
+      </div>
+
+      <div style="height:1px;background:rgba(255,255,255,.15);margin-bottom:16px"></div>
+
+      <!-- 兩欄：點數 + 兩個小卡 -->
+      <div style="display:flex;align-items:stretch;gap:12px">
+        <!-- 左：點數 -->
+        <div style="flex:1">
+          <p class="hero-pts-label" data-zh="目前可用點數" data-en="Available Points" style="font-size:13px;opacity:.65;margin-bottom:4px">目前可用點數</p>
+          <div style="display:flex;align-items:baseline;gap:5px">
+            <p class="hero-pts" id="hero-pts" style="font-size:52px;font-weight:800;line-height:1;letter-spacing:-1px">—</p>
+            <p class="hero-unit" data-zh="點" data-en="pts" style="font-size:15px;opacity:.65">點</p>
+          </div>
+          <!-- 到期提示 -->
+          <div id="next-expiry-block" style="display:none;margin-top:8px">
+            <p id="next-expiry-text" style="font-size:12px;color:rgba(255,255,255,.6);line-height:1.5"></p>
+          </div>
+        </div>
+        <!-- 右：兩個等寬小卡 -->
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:110px">
+          <div style="background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);border-radius:12px;padding:10px 12px;flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center">
+            <div style="font-size:12px;opacity:.65;margin-bottom:4px" data-zh="本月集點" data-en="This Month">本月集點</div>
+            <div id="hero-month-count" style="font-size:22px;font-weight:800;line-height:1;color:#fff">—</div>
+            <div style="font-size:12px;opacity:.55;margin-top:3px" data-zh="次" data-en="scans">次</div>
+          </div>
+          <div style="background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);border-radius:12px;padding:10px 12px;flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center">
+            <div style="font-size:12px;opacity:.65;margin-bottom:4px" data-zh="排行榜" data-en="Ranking">排行榜</div>
+            <div id="hero-rank" style="font-size:22px;font-weight:800;line-height:1;color:#fff">—</div>
+            <div style="font-size:12px;opacity:.55;margin-top:3px" data-zh="本月" data-en="this month">本月</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 即將過期點數區塊（隱藏，保留功能） -->
+      <div class="pts-expiry-block" id="pts-expiry-block" style="display:none;margin-top:12px">
+        <div id="pts-expiry-list"></div>
+      </div>
+    </div>
+    <div style="padding:8px 16px 0;display:flex;flex-direction:column;gap:8px">
+
+      <!-- 新會員歡迎贈點通知卡 -->
+      <div id="welcome-bonus-card" style="display:none;background:linear-gradient(135deg,#fff0f3 0%,#ffe4ea 100%);border:1.5px solid #f9c0cb;border-radius:16px;padding:16px 18px;position:relative;overflow:hidden">
+        <div style="position:absolute;right:-10px;top:-10px;font-size:60px;opacity:.12;line-height:1">🌸</div>
+        <div data-welcome-zh style="display:none">
+          <div style="font-size:18px;font-weight:800;color:var(--dark);margin-bottom:6px">🎉 歡迎加入 BINI Blooms！</div>
+          <div style="font-size:14px;color:var(--brown);line-height:1.7;margin-bottom:10px">感謝妳成為我們的新會員 💖<br>我們特別為妳準備了 <strong style="font-size:18px;color:var(--dark)">+10 點</strong> 歡迎禮，<br>讓美麗的旅程從這裡開始 🌺</div>
+          <div style="font-size:12px;color:#b07080;background:rgba(255,255,255,.6);border-radius:8px;padding:6px 10px;display:inline-block">✨ 點數已自動存入帳戶，馬上可以使用！</div>
+        </div>
+        <div data-welcome-en style="display:none">
+          <div style="font-size:18px;font-weight:800;color:var(--dark);margin-bottom:6px">🎉 Welcome to BINI Blooms!</div>
+          <div style="font-size:14px;color:var(--brown);line-height:1.7;margin-bottom:10px">Thank you for joining our family 💖<br>We've gifted you <strong style="font-size:18px;color:var(--dark)">+10 Points</strong> as a welcome treat,<br>because your beauty journey deserves the best start 🌺</div>
+          <div style="font-size:12px;color:#b07080;background:rgba(255,255,255,.6);border-radius:8px;padding:6px 10px;display:inline-block">✨ Points are already in your account — enjoy!</div>
+        </div>
+      </div>
+      <button id="btn-install" class="btn-install" onclick="handleInstall()">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        <span data-zh="加入主畫面" data-en="Add to Home Screen">加入主畫面</span>
+      </button>
+      <button id="btn-enable-push" onclick="handleEnablePush()" style="display:none;width:100%;padding:11px 16px;background:var(--brown);color:#fff;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;align-items:center;justify-content:center;gap:7px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        <span data-zh="開啟推播通知" data-en="Enable Notifications">開啟推播通知</span>
+      </button>
+    </div>
+    <section class="section">
+      <h2 class="section-title" data-zh="最近消費紀錄" data-en="Recent Activity">最近消費紀錄</h2>
+      <div id="history-list"><p class="empty-hint" data-zh="載入中..." data-en="Loading...">載入中...</p></div>
+    </section>
+  </div>
+
+  <!-- 集點 -->
+  <div class="page" id="page-scan">
+    <div class="scan-wrap">
+      <!-- 掃描提示 -->
+      <div class="scan-hint-box">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        <span data-zh="掃描店員出示的 QR Code 即可集點" data-en="Scan the QR Code shown by staff to earn points">掃描店員出示的 QR Code 即可集點</span>
+      </div>
+
+      <!-- 拍攝技巧 -->
+      <div style="background:var(--pale);border-radius:14px;padding:14px 16px;width:100%">
+        <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:8px" data-zh="📸 拍攝技巧（提高成功率）" data-en="📸 Tips for best results">📸 拍攝技巧（提高成功率）</div>
+        <div style="font-size:12px;color:var(--brown);line-height:2">
+          <div data-zh="✅ QR Code 置中，距離約 15～25 公分" data-en="✅ Center the QR Code, 15-25cm away">✅ QR Code 置中，距離約 15～25 公分</div>
+          <div data-zh="✅ 確保光線充足，避免陰影遮擋" data-en="✅ Good lighting, no shadows">✅ 確保光線充足，避免陰影遮擋</div>
+          <div data-zh="✅ 手機拿穩，畫面清晰不模糊" data-en="✅ Hold steady, keep image sharp">✅ 手機拿穩，畫面清晰不模糊</div>
+          <div data-zh="✅ 若失敗請稍微改變距離後重試" data-en="✅ If failed, slightly adjust distance">✅ 若失敗請稍微改變距離後重試</div>
+        </div>
+      </div>
+
+      <!-- 集點規則 -->
+      <div style="background:#fff;border-radius:14px;padding:12px 16px;width:100%;border:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:6px" data-zh="集點規則" data-en="Points Rules">集點規則</div>
+        <div id="tier-rules-display" style="font-size:12px;color:var(--brown);line-height:1.8"></div>
+      </div>
+
+      <!-- 掃描按鈕 -->
+      <label for="qr-file-input" class="btn-primary" id="scan-btn-label" style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;width:100%">
+        <svg id="scan-icon" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+        <span id="scan-btn-text" data-zh="開啟相機掃描" data-en="Open Camera">開啟相機掃描</span>
+      </label>
+      <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display:none" onchange="handleQRFile(this)">
+
+      <!-- 取消返回首頁 -->
+      <button onclick="switchPage('home',document.querySelector('.bnav-btn'))" style="width:100%;padding:12px;background:transparent;color:var(--brown);border:1.5px solid var(--border);border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        <span data-zh="取消，返回首頁" data-en="Cancel, Back to Home">取消，返回首頁</span>
+      </button>
+
+      <!-- 狀態顯示 -->
+      <div id="scan-status-wrap" style="width:100%;min-height:52px;display:flex;align-items:center;justify-content:center">
+        <p id="scan-status" class="scan-status" style="text-align:center;width:100%"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 兌換 -->
+  <div class="page" id="page-redeem">
+    <div class="page-pad">
+      <div class="redeem-section-title" data-zh="💰 點數折抵消費" data-en="💰 Redeem for Discount">💰 點數折抵消費</div>
+      <div class="deduct-card">
+        <p class="deduct-desc" data-zh="1點 = NT$1，最低折抵 1 點" data-en="1 pt = NT$1, minimum 1 pt">1點 = NT$1，最低折抵 1 點</p>
+        <p class="pts-avail"><span data-zh="可用：" data-en="Available: ">可用：</span><strong id="redeem-pts-avail">—</strong><span data-zh=" 點" data-en=" pts"> 點</span></p>
+        <div class="deduct-row">
+          <input type="number" id="deduct-input" class="deduct-input" placeholder="0" min="1" inputmode="numeric" oninput="updateDeductPreview()">
+          <span class="deduct-eq">= NT$<span id="deduct-preview">0</span></span>
+        </div>
+        <button class="btn-primary" onclick="startDeduct()" style="margin-top:12px">
+          <span data-zh="申請折抵" data-en="Apply Discount">申請折抵</span>
+        </button>
+      </div>
+      <div class="redeem-section-title" style="margin-top:20px" data-zh="🎁 兌換獎品" data-en="🎁 Redeem Rewards">🎁 兌換獎品</div>
+      <div id="rewards-list"><p class="empty-hint" data-zh="載入中..." data-en="Loading...">載入中...</p></div>
+    </div>
+  </div>
+
+  <!-- 公告 -->
+  <div class="page" id="page-announce">
+    <div class="page-pad">
+      <div id="announce-list"><p class="empty-hint" data-zh="載入中..." data-en="Loading...">載入中...</p></div>
+    </div>
+  </div>
+
+  <!-- 客服 -->
+  <div class="page" id="page-support">
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-welcome">
+        <img src="/icons/logo.png" alt="BINI" style="width:88px;height:88px;border-radius:14px;object-fit:contain;background:#fff;padding:8px;margin-bottom:8px;box-shadow:0 2px 10px rgba(61,12,26,.1)">
+        <p class="chat-welcome-title">BINI Blooms</p>
+        <p class="chat-welcome-sub" data-zh="有任何問題歡迎留言，我們會盡快回覆 🌸" data-en="Message us anytime, we'll reply soon 🌸">有任何問題歡迎留言</p>
+        <div class="chat-topics">
+          <button class="topic-chip" onclick="insertTopic('a')" data-zh="點數問題" data-en="Points Issue">點數問題</button>
+          <button class="topic-chip" onclick="insertTopic('b')" data-zh="兌換方式" data-en="Redemption">兌換方式</button>
+          <button class="topic-chip" onclick="insertTopic('c')" data-zh="優惠活動" data-en="Promotions">優惠活動</button>
+          <button class="topic-chip" onclick="insertTopic('d')" data-zh="其他問題" data-en="Other">其他問題</button>
+        </div>
+      </div>
+      <div id="chat-list"></div>
+      <div id="chat-loading" style="display:none" class="empty-hint">載入中...</div>
+    </div>
+    <div class="chat-input-bar">
+      <label for="chat-img-input" class="chat-img-btn">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+      </label>
+      <input type="file" id="chat-img-input" accept="image/*" style="display:none" onchange="handleChatImage(this)">
+      <textarea id="chat-input" class="chat-textarea" rows="1" placeholder="輸入訊息..."
+        oninput="autoResize(this)"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+      <button id="chat-send-btn" class="chat-send-btn" onclick="sendMessage()">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 我的 -->
+  
+  <!-- ═══════════════════════════════════════
+       v3.0.0 購物模組頁面
+  ═══════════════════════════════════════ -->
+
+  <!-- 商品列表頁 -->
+  <div class="page" id="page-shop">
+    <div class="page-top-bar">
+      <span style="flex:1"></span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="cart-btn-wrap" onclick="ShopPage.openMyOrders()" title="我的訂單" style="border:none;cursor:pointer">
+          <svg width="24" height="24" fill="none" stroke="var(--brown)" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+        </button>
+        <button class="cart-btn-wrap" onclick="ShopPage.openCart()" style="border:none;cursor:pointer">
+          <svg width="24" height="24" fill="none" stroke="var(--brown)" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z"/></svg>
+          <span class="cart-badge" style="display:none">0</span>
+        </button>
+      </div>
+    </div>
+    <div class="page-scroll">
+      <div style="padding:10px 14px 0">
+        <div class="shop-search-bar">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+          <input type="text" placeholder="搜尋商品…" id="shop-search-input"
+            oninput="if(this.value.length===0)ShopPage.renderShopList(true);else ShopSearch.search(this.value)">
+        </div>
+      </div>
+      <div id="shop-category-bar"></div>
+      <div id="shop-product-grid"></div>
+      <button id="shop-load-more" style="display:none" onclick="ShopPage.renderShopList(false)">載入更多商品</button>
+    </div>
+    <div id="shop-loading" style="display:none"><div class="loading-spinner">載入中…</div></div>
+  </div>
+
+  <!-- 商品詳情頁 -->
+  <div class="page" id="page-shop-detail">
+    <div class="page-top-bar">
+      <button class="back-btn" onclick="switchPage('shop',document.getElementById('bnav-shop'))" style="background:none;border:none;cursor:pointer;padding:4px">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      </button>
+      <span class="top-bar-title" data-zh="商品詳情" data-en="Product Detail">商品詳情</span>
+      <button class="cart-btn-wrap" onclick="ShopPage.openCart()">
+        <svg width="28" height="28" fill="none" stroke="var(--brown)" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z"/></svg>
+        <span class="cart-badge" style="display:none">0</span>
+      </button>
+    </div>
+    <div class="page-scroll" id="shop-detail-content"></div>
+  </div>
+
+  <!-- 購物車頁 -->
+  <div class="page" id="page-shop-cart">
+    <div class="page-top-bar">
+      <button class="back-btn" onclick="switchPage('shop',document.getElementById('bnav-shop'))" style="background:none;border:none;cursor:pointer;padding:4px">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      </button>
+      <span class="top-bar-title" data-zh="購物車" data-en="Cart">購物車</span>
+    </div>
+    <div class="page-scroll" id="cart-items"></div>
+    <div id="cart-summary" style="display:none"></div>
+  </div>
+
+  <!-- 結帳頁 -->
+  <div class="page" id="page-shop-checkout">
+    <div class="page-top-bar">
+      <button class="back-btn" onclick="ShopPage.openCart()" style="background:none;border:none;cursor:pointer;padding:4px">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      </button>
+      <span class="top-bar-title" data-zh="結帳" data-en="Checkout">結帳</span>
+    </div>
+    <div class="page-scroll" id="checkout-content"></div>
+  </div>
+
+  <!-- 訂單完成頁 -->
+  <div class="page" id="page-shop-order-result">
+    <div class="page-top-bar">
+      <span class="top-bar-title" data-zh="訂單確認" data-en="Order Confirmed">訂單確認</span>
+    </div>
+    <div class="page-scroll" id="order-result-content"></div>
+  </div>
+
+  <!-- 我的訂單列表頁 -->
+  <div class="page" id="page-shop-my-orders">
+    <div class="page-top-bar">
+      <button class="back-btn" onclick="switchPage('shop',document.getElementById('bnav-shop'))" style="background:none;border:none;cursor:pointer;padding:4px">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      </button>
+      <span class="top-bar-title" data-zh="我的訂單" data-en="My Orders">我的訂單</span>
+    </div>
+    <div class="page-scroll" id="my-orders-list"></div>
+  </div>
+
+  <!-- 訂單詳情頁 -->
+  <div class="page" id="page-shop-order-detail">
+    <div class="page-top-bar">
+      <button class="back-btn" onclick="ShopPage.openMyOrders()" style="background:none;border:none;cursor:pointer;padding:4px">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      </button>
+      <span class="top-bar-title" data-zh="訂單詳情" data-en="Order Detail">訂單詳情</span>
+    </div>
+    <div class="page-scroll" id="order-detail-content"></div>
+  </div>
+
+<div class="page" id="page-profile">
+    <div class="page-pad">
+      <div class="profile-header">
+        <div class="avatar" id="profile-avatar"></div>
+        <div>
+          <p class="profile-name" id="profile-name"></p>
+          <p class="profile-since" id="profile-since"></p>
+          <span class="tier-badge" id="profile-tier"></span>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><p class="stat-label" data-zh="累積消費" data-en="Total Spent">累積消費</p><p class="stat-val" id="stat-spent">—</p></div>
+        <div class="stat-card"><p class="stat-label" data-zh="消費次數" data-en="Visits">消費次數</p><p class="stat-val" id="stat-visits">—</p></div>
+        <div class="stat-card"><p class="stat-label" data-zh="目前點數" data-en="Current">目前點數</p><p class="stat-val" id="stat-pts">—</p></div>
+        <div class="stat-card"><p class="stat-label" data-zh="已折抵" data-en="Used">已折抵</p><p class="stat-val" id="stat-redeems">—</p></div>
+      </div>
+      <div class="tier-card">
+        <p class="tier-label" id="tier-label"></p>
+        <div class="tier-bar-bg"><div class="tier-bar-fill" id="tier-bar" style="width:0%"></div></div>
+        <div class="tier-row"><span id="tier-from"></span><span id="tier-progress"></span><span id="tier-to"></span></div>
+        <div id="tier-next-rule" style="font-size:12px;color:#888;margin-top:8px;text-align:center"></div>
+      </div>
+      <div class="info-list">
+        <div class="info-row"><span class="info-key" data-zh="手機號碼" data-en="Phone">手機號碼</span><span class="info-val" id="info-phone"></span></div>
+        <div class="info-row"><span class="info-key" data-zh="生日" data-en="Birthday">生日</span><span class="info-val" id="info-birthday"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部導覽 -->
+  <nav class="bottom-nav" style="display:none">
+    <button class="bnav-btn active" onclick="switchPage('home',this)">
+      <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75"/></svg>
+      <span data-zh="首頁" data-en="Home">首頁</span>
+    </button>
+    <button class="bnav-btn" onclick="switchPage('scan',this)">
+      <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM6.75 16.5h.75v.75h-.75v-.75zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM16.5 6.75h.75v.75h-.75v-.75z"/></svg>
+      <span data-zh="集點" data-en="Scan">集點</span>
+    </button>
+    <button class="bnav-btn" onclick="switchPage('redeem',this)">
+      <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+      <span data-zh="兌換" data-en="Redeem">兌換</span>
+    </button>
+    <button class="bnav-btn" onclick="switchPage('announce',this)">
+      <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46"/></svg>
+      <span data-zh="公告" data-en="News">公告</span>
+    </button>
+    <button class="bnav-btn" onclick="switchPage('support',this)" id="bnav-support">
+      <div style="position:relative;display:inline-block">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>
+        <span id="unread-badge" style="display:none;position:absolute;top:-3px;right:-3px;width:8px;height:8px;background:#e05070;border-radius:50%"></span>
+      </div>
+      <span data-zh="客服" data-en="Support">客服</span>
+    </button>
+    <button class="bnav-btn" onclick="switchPage('shop',this)" id="bnav-shop">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z"/></svg>
+        <span data-zh="購物" data-en="Shop">購物</span>
+      </button>
+
+    <button class="bnav-btn" onclick="switchPage('profile',this)">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
+      <span data-zh="我的" data-en="Profile">我的</span>
+    </button>
+  </nav>
+</div>
+
+<!-- 成功 Modal -->
+<div id="modal-overlay" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-icon" id="modal-icon">✓</div>
+    <p class="modal-title" id="modal-title"></p>
+    <p class="modal-pts" id="modal-pts"></p>
+    <div class="modal-earn-detail" id="modal-earn-detail" style="display:none"></div>
+    <p class="modal-sub" id="modal-sub"></p>
+    <button class="btn-primary" onclick="closeModal()"><span data-zh="確認" data-en="OK">確認</span></button>
+  </div>
+</div>
+
+<!-- 折抵確認 Modal -->
+<div id="deduct-modal" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-icon" style="background:#FFF0E0;color:#B05000;font-size:28px">💰</div>
+    <p class="modal-title" data-zh="確認折抵消費" data-en="Confirm Discount">確認折抵消費</p>
+    <p id="deduct-modal-info" style="color:#333;font-size:15px;font-weight:600;margin:10px 0;white-space:pre-line"></p>
+    <p style="color:#e05070;font-size:12px;margin-bottom:12px" data-zh="⚠️ 優先扣除最近過期的點數" data-en="⚠️ Oldest points deducted first">⚠️ 優先扣除最近過期的點數</p>
+    <div class="input-group" style="margin-bottom:14px">
+      <label data-zh="請輸入店員確認碼" data-en="Enter staff confirmation code">請輸入店員確認碼</label>
+      <input type="text" id="deduct-code-input" maxlength="4" inputmode="numeric" placeholder="0000" style="text-align:center;font-size:26px;font-weight:800;letter-spacing:10px">
+    </div>
+    <button class="btn-primary" onclick="confirmDeduct()" style="margin-bottom:8px"><span data-zh="確認折抵" data-en="Confirm">確認折抵</span></button>
+    <button class="btn-secondary" style="margin-bottom:0" onclick="document.getElementById('deduct-modal').style.display='none'"><span data-zh="取消" data-en="Cancel">取消</span></button>
+  </div>
+</div>
+
+<!-- 兌換獎品確認 Modal -->
+<div id="reward-modal" class="modal-overlay" style="display:none">
+  <div class="modal-card">
+    <div class="modal-icon" style="background:#FCE8ED;color:#9B2335;font-size:28px">🎁</div>
+    <p class="modal-title" data-zh="確認兌換獎品" data-en="Confirm Redemption">確認兌換獎品</p>
+    <p id="reward-modal-info" style="color:#333;font-size:15px;font-weight:600;margin:10px 0;white-space:pre-line"></p>
+    <div class="input-group" style="margin-bottom:14px">
+      <label data-zh="請輸入店員確認碼" data-en="Enter staff confirmation code">請輸入店員確認碼</label>
+      <input type="text" id="reward-code-input" maxlength="4" inputmode="numeric" placeholder="0000" style="text-align:center;font-size:26px;font-weight:800;letter-spacing:10px">
+    </div>
+    <button class="btn-primary" onclick="confirmRewardRedeem()" style="margin-bottom:8px"><span data-zh="確認兌換" data-en="Confirm">確認兌換</span></button>
+    <button class="btn-secondary" style="margin-bottom:0" onclick="document.getElementById('reward-modal').style.display='none'"><span data-zh="取消" data-en="Cancel">取消</span></button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module" src="/js/app.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', async () => {
+    try {
+      // 先清除所有舊的 unregistered SW
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for(const reg of regs){
+        const sw = reg.active || reg.waiting || reg.installing;
+        const url = sw?.scriptURL || '';
+        // 只保留屬於本站的 SW
+        if(!url.includes(location.origin)){
+          await reg.unregister();
+          console.log('清除舊 SW:', url);
+        }
+      }
+      // 只保留 firebase-messaging-sw.js（負責推播+快取），sw.js 已廢棄
+      // 清除所有舊 SW registration 再重新註冊，確保不殘留舊版
+      const allRegs = await navigator.serviceWorker.getRegistrations();
+      for(const reg of allRegs){ await reg.unregister(); }
+      const r = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {updateViaCache:'none'});
+      console.log('SW 已註冊:', r.scope);
+      await r.update();
+    } catch(e) { console.log('SW 錯誤:', e); }
+  });
+}
+// Splash screen：最多顯示 2.5 秒，Firebase Auth 初始化完成後由 app.js 呼叫 hideSplash()
+window.hideSplash = function() {
+  const s = document.getElementById('splash-screen');
+  if (s) { s.classList.add('hide'); setTimeout(()=>{ if(s.parentNode) s.parentNode.removeChild(s); }, 450); }
+};
+setTimeout(window.hideSplash, 2500); // 最長等待 2.5 秒
+</script>
+  <script type="module" src="js/shop.js"></script>
+</body>
+</html>
