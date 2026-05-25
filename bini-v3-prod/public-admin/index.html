@@ -590,20 +590,20 @@ window.handleForgotPw_settings=async function(){
 <script type="module" src="./admin-app.js"></script>
 <script>
 if('serviceWorker' in navigator){
+  // 新版 SW 接管時自動重新整理一次，部署後即可看到最新版
+  let _swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(_swReloaded) return; _swReloaded = true; location.reload();
+  });
   window.addEventListener('load', async () => {
     try {
+      // 只清除「非本站」的舊 SW
       const regs = await navigator.serviceWorker.getRegistrations();
       for(const reg of regs){
-        const sw = reg.active || reg.waiting || reg.installing;
-        if(sw && !sw.scriptURL.includes(location.origin)){
-          await reg.unregister();
-        }
+        const url = (reg.active || reg.waiting || reg.installing)?.scriptURL || '';
+        if(url && !url.includes(location.origin)){ await reg.unregister(); }
       }
-      // 只保留 firebase-messaging-sw.js，清除所有舊 SW 避免重複接收 push
-      const allRegs2 = await navigator.serviceWorker.getRegistrations();
-      for(const reg of allRegs2){ await reg.unregister(); }
       const r2 = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {updateViaCache:'none'});
-      console.log('Admin SW 已註冊:', r2.scope);
       await r2.update();
     } catch(e) { console.log('Admin SW 錯誤:', e); }
   });
