@@ -23,6 +23,18 @@ import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/
 const _fns = getFunctions(undefined, 'us-central1');
 async function callFn(name, data = {}) { const r = await httpsCallable(_fns, name)(data); return r.data; }
 
+// 骨架載入動畫
+window.skeletonList = function(n = 3) {
+  let h = '';
+  for (let i = 0; i < n; i++) h += '<div class="sk-card"><div class="skeleton sk-avatar"></div><div class="sk-lines"><div class="skeleton sk-line m"></div><div class="skeleton sk-line s"></div></div></div>';
+  return h;
+};
+window.skeletonGrid = function(n = 4) {
+  let h = '<div class="sk-grid">';
+  for (let i = 0; i < n; i++) h += '<div class="sk-tile"><div class="skeleton sk-tile-img"></div><div class="sk-tile-body"><div class="skeleton sk-line l"></div><div class="skeleton sk-line s"></div></div></div>';
+  return h + '</div>';
+};
+
 // ── 會員等級設定 ──
 // VAPID Key 來自 Firebase Console → Project Settings → Cloud Messaging → 網路推播憑證
 // 截圖中可見的 Key（請確認完整 Key 後填入）
@@ -559,8 +571,9 @@ async function loadHomeData() {
     }
 
     // 消費紀錄
-    const txSnap = await getDocs(query(collection(db,'transactions'),where('uid','==',currentUser.uid),limit(30)));
     const list   = document.getElementById('history-list');
+    if (list) list.innerHTML = window.skeletonList(3);
+    const txSnap = await getDocs(query(collection(db,'transactions'),where('uid','==',currentUser.uid),limit(30)));
     if (txSnap.empty) { list.innerHTML=`<p class="empty-hint">${t('還沒有紀錄','No records yet')}</p>`; return; }
     const docs=[]; txSnap.forEach(d=>docs.push({id:d.id,...d.data()}));
     docs.sort((a,b)=>(b.createdAt?.toDate()||0)-(a.createdAt?.toDate()||0));
@@ -928,6 +941,8 @@ function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0
 // ── 兌換頁 ──
 async function loadRedeem() {
   if(!currentUser) return;
+  const rewardsListEl=document.getElementById('rewards-list');
+  if(rewardsListEl) rewardsListEl.innerHTML=window.skeletonList(3);
   try {
     const snap=await getDoc(doc(db,'members',currentUser.uid)); if(snap.exists()) memberData=snap.data();
     const pts=memberData?.points||0;
@@ -1021,7 +1036,7 @@ window.confirmRewardRedeem=async function(){
 // ── 公告（同時讀取 announcements + broadcasts）──
 async function loadAnnouncements() {
   const list=document.getElementById('announce-list');
-  list.innerHTML=`<p class="empty-hint">${t('載入中...','Loading...')}</p>`;
+  list.innerHTML=window.skeletonList(3);
   try {
     const [annSnap, bcSnap] = await Promise.all([
       getDocs(collection(db,'announcements')),

@@ -90,6 +90,20 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Ne
 .h-pts.deduct,.h-pts.redeem{color:#B05000}
 .empty-hint{font-size:20px;color:#aaa;text-align:center;padding:28px 0}
 
+/* Skeleton 載入動畫 */
+@keyframes sk-shimmer{0%{background-position:-200px 0}100%{background-position:calc(200px + 100%) 0}}
+.skeleton{background:#ececec;background-image:linear-gradient(90deg,#ececec 0,#f6f6f6 40px,#ececec 80px);background-size:200px 100%;background-repeat:no-repeat;border-radius:8px;animation:sk-shimmer 1.2s infinite linear}
+.sk-card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:13px;margin-bottom:10px}
+.sk-avatar{width:42px;height:42px;border-radius:12px;flex-shrink:0}
+.sk-lines{flex:1}
+.sk-line{height:13px;margin-bottom:9px}
+.sk-line:last-child{margin-bottom:0}
+.sk-line.s{width:35%}.sk-line.m{width:60%}.sk-line.l{width:85%}
+.sk-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sk-tile{background:#fff;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.sk-tile-img{width:100%;aspect-ratio:1;border-radius:0}
+.sk-tile-body{padding:10px}
+
 /* Scan */
 .scan-wrap{display:flex;flex-direction:column;align-items:center;padding:24px 20px;gap:14px}
 .scan-hint-box{display:flex;align-items:center;gap:8px;font-size:18px;color:var(--brown);background:#fff;border-radius:10px;padding:10px 14px;width:100%;border:1px solid var(--border)}

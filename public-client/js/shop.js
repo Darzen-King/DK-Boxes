@@ -727,7 +727,7 @@ ${maxPointsDiscount > 0 ? `
     window.switchPage && window.switchPage("shop-my-orders", document.getElementById("bnav-shop") || document.querySelector(".bnav-btn"));
     this._activePage = "shop-my-orders";
     const container = document.getElementById("my-orders-list");
-    container.innerHTML = '<div class="loading-spinner">載入中…</div>';
+    container.innerHTML = window.skeletonList ? window.skeletonList(3) : '<div class="loading-spinner">載入中…</div>';
     try {
       const orders = await ShopAPI.getMyOrders(30);
       if (!orders.length) {
@@ -760,7 +760,7 @@ ${maxPointsDiscount > 0 ? `
     window.switchPage && window.switchPage("shop-order-detail", document.getElementById("bnav-shop") || document.querySelector(".bnav-btn"));
     this._activePage = "shop-order-detail";
     const container = document.getElementById("order-detail-content");
-    container.innerHTML = '<div class="loading-spinner">載入中…</div>';
+    container.innerHTML = window.skeletonList ? window.skeletonList(2) : '<div class="loading-spinner">載入中…</div>';
     const order = await ShopAPI.getOrder(orderId);
     if (!order) { container.innerHTML = "<p>訂單不存在</p>"; return; }
 
