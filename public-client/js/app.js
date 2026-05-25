@@ -1160,6 +1160,8 @@ async function loadProfile() {
       document.getElementById('tier-label').textContent=t('已達最高等級 💎','Top tier reached 💎');
       ['tier-from','tier-to','tier-progress','tier-next-rule'].forEach(id=>document.getElementById(id).textContent='');
     }
+    const rcEl=document.getElementById('profile-referral-count');
+    if(rcEl) rcEl.textContent=`${d.referralRewardCount||0} / 10`;
     loadReferralCode();
   } catch(e){ console.error(e); }
 }

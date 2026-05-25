@@ -35,6 +35,7 @@ const RULES = {
   SHOP_POINT_MIN_ORDER: 300,
   SHOP_POINT_MAX_RATIO: 0.3,
   CVS_EXPIRE_HOURS: 72,
+  REFERRAL_REWARD_CAP: 10, // 每位推薦人最多回饋的成功推薦人數
 };
 
 // ─────────────────────────────────────────────
@@ -346,37 +347,43 @@ async function maybePayReferralReward(memberUid) {
   if (!memberUid) return;
   const memberRef = db.collection("members").doc(memberUid);
   const REWARD = 10;
-  const claim = await db.runTransaction(async (t) => {
+  const CAP = RULES.REFERRAL_REWARD_CAP; // 推薦回饋人數上限
+  const result = await db.runTransaction(async (t) => {
     const m = await t.get(memberRef);
     if (!m.exists) return null;
     const md = m.data();
     if (!md.referralPending || !md.referredBy) return null;
-    t.update(memberRef, { referralPending: false }); // 原子清旗標，避免重複發放
-    return { referrerUid: md.referredBy };
-  });
-  if (!claim) return;
-
-  const referrerRef = db.collection("members").doc(claim.referrerUid);
-  if (!(await referrerRef.get()).exists) return;
-  const expiresAt = new Date();
-  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
-  const txRef = db.collection("transactions").doc();
-  const batchRef = db.collection("point_batches").doc();
-  await db.batch()
-    .update(referrerRef, { points: admin.firestore.FieldValue.increment(REWARD) })
-    .set(txRef, {
-      uid: claim.referrerUid, type: "referral_reward", points: REWARD,
+    const referrerRef = db.collection("members").doc(md.referredBy);
+    const refDoc = await t.get(referrerRef);
+    // 不論是否達上限，都先清掉 pending（此被推薦人只結算一次）
+    t.update(memberRef, { referralPending: false });
+    if (!refDoc.exists) return null;
+    const count = refDoc.data().referralRewardCount || 0;
+    if (count >= CAP) return { capped: true }; // 已達上限，不再發放
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
+    const txRef = db.collection("transactions").doc();
+    const batchRef = db.collection("point_batches").doc();
+    t.update(referrerRef, {
+      points: admin.firestore.FieldValue.increment(REWARD),
+      referralRewardCount: admin.firestore.FieldValue.increment(1),
+    });
+    t.set(txRef, {
+      uid: md.referredBy, type: "referral_reward", points: REWARD,
       desc: "好友推薦獎勵", descEn: "Referral reward",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-    .set(batchRef, {
-      uid: claim.referrerUid, points: REWARD, remaining: REWARD,
+    });
+    t.set(batchRef, {
+      uid: md.referredBy, points: REWARD, remaining: REWARD,
       earnedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: admin.firestore.Timestamp.fromDate(expiresAt), txId: txRef.id,
-    })
-    .commit();
-  await sendPush(claim.referrerUid, "🎉 推薦獎勵到帳",
-    `您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
+    });
+    return { referrerUid: md.referredBy, paid: true };
+  });
+  if (result?.paid) {
+    await sendPush(result.referrerUid, "🎉 推薦獎勵到帳",
+      `您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
+  }
 }
 
 // ═══════════════════════════════════════════
