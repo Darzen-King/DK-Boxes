@@ -582,15 +582,18 @@ async function loadHomeData() {
       // 推薦相關
       if (desc === '輸入推薦碼獎勵') return 'Referral signup bonus';
       if (desc === '好友推薦獎勵') return 'Referral reward';
+      // 點數到期
+      if (desc === '點數到期') return 'Points expired';
       return desc;
     }
     docs.slice(0,15).forEach(tx=>{
       const isEarn=tx.type==='earn', isDeduct=tx.type==='deduct', isWelcome=tx.type==='welcome';
       const isReferral=tx.type==='referral_signup'||tx.type==='referral_reward';
+      const isExpire=tx.type==='expire';
       const isPos=isEarn||isWelcome||isReferral;
       const dateStr=tx.createdAt?tx.createdAt.toDate().toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'—';
       const item=document.createElement('div'); item.className='history-item';
-      item.innerHTML=`<div class="h-icon ${isPos?'earn':isDeduct?'deduct':'redeem'}">${isWelcome||isReferral?'🎁':isEarn?'+':isDeduct?'💰':'🎁'}</div>
+      item.innerHTML=`<div class="h-icon ${isPos?'earn':'deduct'}">${isWelcome||isReferral?'🎁':isEarn?'+':isExpire?'⏰':'💰'}</div>
         <div class="h-info"><div class="h-desc">${escHtml(translateDesc(tx.desc,tx.type)||t('紀錄','Record'))}</div>
         <div class="h-date">${dateStr}${tx.amount?' · NT$'+tx.amount.toLocaleString():''}</div></div>
         <div class="h-pts ${isPos?'earn':'deduct'}">${isPos?'+':'-'}${tx.points}</div>`;
