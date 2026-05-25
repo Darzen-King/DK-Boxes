@@ -15,8 +15,10 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Ne
 .lang-btn.active{background:var(--dark);color:#fff}
 .input-group{width:100%;margin-bottom:14px}
 .input-group label{display:block;font-size:18px;color:var(--brown);margin-bottom:5px;font-weight:500}
-.input-group input{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:12px;font-size:22px;outline:none;transition:border-color .2s;background:#fff;color:var(--dark)}
-.input-group input:focus{border-color:var(--pink)}
+.input-group input,.input-group select{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:12px;font-size:22px;outline:none;transition:border-color .2s;background:#fff;color:var(--dark)}
+.input-group input:focus,.input-group select:focus{border-color:var(--pink)}
+.bd-selects{display:flex;gap:8px}
+.bd-selects select{flex:1;min-width:0;padding:12px 8px;text-align:center}
 .btn-primary{width:100%;padding:14px;background:var(--dark);color:#fff;border:none;border-radius:12px;font-size:22px;font-weight:700;cursor:pointer;transition:opacity .2s;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px}
 .btn-primary:active{opacity:.85}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed}

@@ -162,6 +162,52 @@ onAuthStateChanged(auth, async user => {
 });
 setTimeout(applyLang, 50);
 
+// ── 生日下拉選單（年/月/日）──
+// 原生 <input type="date"> 在 Android 無法直接選年份，改用三個下拉選單，
+// 任何平台都能直接點選年份。值仍以 YYYY-MM-DD 字串寫入會員資料。
+function initBirthdaySelects() {
+  const yEl = document.getElementById('reg-bd-year');
+  const mEl = document.getElementById('reg-bd-month');
+  const dEl = document.getElementById('reg-bd-day');
+  if (!yEl || !mEl || !dEl) return;
+
+  const ph = (zh, en) => {
+    const o = document.createElement('option');
+    o.value = ''; o.dataset.zh = zh; o.dataset.en = en;
+    o.textContent = lang === 'zh' ? zh : en;
+    o.disabled = true; o.selected = true;
+    return o;
+  };
+  const opt = (v, label) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label;
+    return o;
+  };
+
+  const thisYear = new Date().getFullYear();
+  yEl.appendChild(ph('年', 'Year'));
+  for (let y = thisYear; y >= thisYear - 100; y--) yEl.appendChild(opt(y, y));
+
+  mEl.appendChild(ph('月', 'Month'));
+  for (let m = 1; m <= 12; m++) mEl.appendChild(opt(m, m));
+
+  // 依年/月填入正確天數（處理 2 月與大小月）
+  const fillDays = () => {
+    const y = parseInt(yEl.value) || 2000;
+    const m = parseInt(mEl.value) || 1;
+    const max = new Date(y, m, 0).getDate();
+    const cur = dEl.value;
+    dEl.innerHTML = '';
+    dEl.appendChild(ph('日', 'Day'));
+    for (let d = 1; d <= max; d++) dEl.appendChild(opt(d, d));
+    if (cur && parseInt(cur) <= max) dEl.value = cur;
+  };
+  fillDays();
+  yEl.addEventListener('change', fillDays);
+  mEl.addEventListener('change', fillDays);
+}
+initBirthdaySelects();
+
 // ── 登入流程 ──
 function showView(view) {
   ['auth-login','auth-register','auth-otp','auth-profile'].forEach(id => {
@@ -264,7 +310,10 @@ window.handleVerifyOTP = async function() {
 // 將 email(手機轉換格式) + 密碼綁定到同一個帳號，讓後續可用手機+密碼登入
 window.handleCompleteRegister = async function() {
   const name  = document.getElementById('reg-name').value.trim();
-  const bd    = document.getElementById('reg-birthday').value;
+  const by    = document.getElementById('reg-bd-year').value;
+  const bm    = document.getElementById('reg-bd-month').value;
+  const bdy   = document.getElementById('reg-bd-day').value;
+  const bd    = (by && bm && bdy) ? `${by}-${String(bm).padStart(2,'0')}-${String(bdy).padStart(2,'0')}` : '';
   const pw    = document.getElementById('reg-password').value;
   const pw2   = document.getElementById('reg-password2').value;
   const msgEl = document.getElementById('profile-msg');
