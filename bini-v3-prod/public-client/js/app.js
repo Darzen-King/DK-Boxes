@@ -1066,7 +1066,7 @@ window.sendMessage=async function(){
   try{
     const uid=currentUser.uid;
     await addDoc(collection(db,'chats',uid,'messages'),{text,sender:'user',read:false,createdAt:serverTimestamp()});
-    await setDoc(doc(db,'chats',uid),{uid,memberName:memberData?.name||'Member',phone:memberData?.phone||'',lastMsg:text,lastMsgAt:serverTimestamp(),unreadAdmin:increment(1)},{merge:true});
+    await setDoc(doc(db,'chats',uid),{uid,memberName:memberData?.name||'Member',phone:memberData?.phone||'',lastMsg:text,lastMsgAt:serverTimestamp(),unreadAdmin:increment(1),hidden:false},{merge:true});
   } catch(e){ console.error(e); input.value=saved; showToast(t('發送失敗: '+(e.code||e.message),'Failed: '+(e.code||e.message))); }
   finally{ if(btn) btn.disabled=false; input.focus(); }
 };
@@ -1079,7 +1079,7 @@ window.handleChatImage=async function(input){
     const sRef=ref(storage,`chat_images/${uid}/${Date.now()}_${file.name}`);
     await uploadBytes(sRef,file); const imageUrl=await getDownloadURL(sRef);
     await addDoc(collection(db,'chats',uid,'messages'),{imageUrl,sender:'user',read:false,createdAt:serverTimestamp()});
-    await setDoc(doc(db,'chats',uid),{uid,memberName:memberData?.name||'Member',phone:memberData?.phone||'',lastMsg:'[圖片]',lastMsgAt:serverTimestamp(),unreadAdmin:increment(1)},{merge:true});
+    await setDoc(doc(db,'chats',uid),{uid,memberName:memberData?.name||'Member',phone:memberData?.phone||'',lastMsg:'[圖片]',lastMsgAt:serverTimestamp(),unreadAdmin:increment(1),hidden:false},{merge:true});
   } catch(e){ showToast(t('上傳失敗','Upload failed')); }
   input.value='';
 };

@@ -33,6 +33,7 @@ function getTierBySpent(s){ for(let i=TIERS.length-1;i>=0;i--){if(s>=TIERS[i].mi
 function calcPoints(amount,tier){ return Math.round(Math.floor(amount/BASE_UNIT)*tier.rate*10)/10; } // 先取整數單位再乘倍率
 
 let currentAdmin=null, inboxUnsub=null, chatUnsub=null, pendingQRUnsub=null;
+let inboxDocs=[], inboxShowHidden=false;
 let chatUid='', cdTimer=null, annImgFile=null;
 let shopLang=localStorage.getItem('shop_lang')||'zh';
 
@@ -654,21 +655,57 @@ function startInbox(){
   if(inboxUnsub){inboxUnsub();inboxUnsub=null;}
   inboxUnsub=onSnapshot(query(collection(db,'chats'),orderBy('lastMsgAt','desc')),
     snap=>{
-      const list=document.getElementById('inbox-list'); list.innerHTML=''; let total=0;
-      if(snap.empty){ list.innerHTML=shopLang==='zh'?'<p class="empty-hint">尚無客服訊息</p>':'<p class="empty-hint">No messages yet</p>'; return; }
-      snap.forEach(d=>{
-        const c=d.data(),u=c.unreadAdmin||0; total+=u;
-        const ts=c.lastMsgAt?c.lastMsgAt.toDate().toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
-        const item=document.createElement('div'); item.className='inbox-item'+(u>0?' unread':'');
-        item.innerHTML=`<div class="inbox-top"><div style="display:flex;align-items:center;gap:8px"><span class="inbox-name">${esc(c.memberName||'Unknown')}</span>${u>0?`<span style="background:var(--pink);color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">${u}</span>`:''}</div><span class="inbox-time">${ts}</span></div>
-          <div style="display:flex;align-items:center;justify-content:space-between"><span class="inbox-preview">${esc(c.lastMsg||'')}</span><span style="font-size:12px;color:#aaa">${c.phone||''}</span></div>`;
-        item.onclick=()=>openChat(d.id,c.memberName||'Unknown',c.phone||'');
-        list.appendChild(item);
-      });
-      const badge=document.getElementById('msg-badge'); if(badge){ badge.textContent=total>0?total:''; badge.classList.toggle('show',total>0); }
+      inboxDocs=[]; snap.forEach(d=>inboxDocs.push({id:d.id,...d.data()}));
+      renderInbox();
     },err=>console.error('inbox:',err)
   );
 }
+
+function renderInbox(){
+  const list=document.getElementById('inbox-list'); if(!list) return;
+  list.innerHTML='';
+  // 未讀徽章只計算「未隱藏」的對話（隱藏對話一收到新訊息就會自動取消隱藏）
+  let total=0; inboxDocs.forEach(c=>{ if(c.hidden!==true) total+=(c.unreadAdmin||0); });
+  const badge=document.getElementById('msg-badge'); if(badge){ badge.textContent=total>0?total:''; badge.classList.toggle('show',total>0); }
+  // 依目前檢視模式過濾：預設只看未隱藏，切換後只看已隱藏
+  const view=inboxDocs.filter(c=>(c.hidden===true)===inboxShowHidden);
+  if(view.length===0){
+    list.innerHTML=inboxShowHidden
+      ? (shopLang==='zh'?'<p class="empty-hint">沒有已隱藏的對話</p>':'<p class="empty-hint">No hidden chats</p>')
+      : (shopLang==='zh'?'<p class="empty-hint">尚無客服訊息</p>':'<p class="empty-hint">No messages yet</p>');
+    return;
+  }
+  const actFn=inboxShowHidden?'unhideChat':'hideChat';
+  const actLabel=inboxShowHidden?(shopLang==='zh'?'取消隱藏':'Unhide'):(shopLang==='zh'?'隱藏':'Hide');
+  view.forEach(c=>{
+    const u=c.unreadAdmin||0;
+    const ts=c.lastMsgAt?c.lastMsgAt.toDate().toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    const item=document.createElement('div'); item.className='inbox-item'+(u>0?' unread':'');
+    item.innerHTML=`<div class="inbox-top"><div style="display:flex;align-items:center;gap:8px"><span class="inbox-name">${esc(c.memberName||'Unknown')}</span>${u>0?`<span style="background:var(--pink);color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">${u}</span>`:''}</div><span class="inbox-time">${ts}</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span class="inbox-preview">${esc(c.lastMsg||'')}</span><span style="display:flex;align-items:center;gap:10px;flex-shrink:0"><span style="font-size:12px;color:#aaa">${c.phone||''}</span><button onclick="event.stopPropagation();${actFn}('${c.id}')" class="inbox-act">${actLabel}</button></span></div>`;
+    item.onclick=()=>openChat(c.id,c.memberName||'Unknown',c.phone||'');
+    list.appendChild(item);
+  });
+}
+
+window.toggleInboxHidden=function(){
+  inboxShowHidden=!inboxShowHidden;
+  const span=document.querySelector('#inbox-toggle-hidden span');
+  if(span){
+    span.setAttribute('data-zh',inboxShowHidden?'返回收件匣':'顯示已隱藏');
+    span.setAttribute('data-en',inboxShowHidden?'Back to Inbox':'Show Hidden');
+    span.textContent=shopLang==='zh'?span.getAttribute('data-zh'):span.getAttribute('data-en');
+  }
+  renderInbox();
+};
+window.hideChat=async function(uid){
+  try{ await setDoc(doc(db,'chats',uid),{hidden:true},{merge:true}); }
+  catch(e){ alert('Error: '+e.message); }
+};
+window.unhideChat=async function(uid){
+  try{ await setDoc(doc(db,'chats',uid),{hidden:false},{merge:true}); }
+  catch(e){ alert('Error: '+e.message); }
+};
 
 // ── 對話 ──
 window.openChat=function(uid,name,phone){

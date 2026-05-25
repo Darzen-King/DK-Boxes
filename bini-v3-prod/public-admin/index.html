@@ -139,6 +139,8 @@ input:focus,textarea:focus{border-color:var(--pink)}
 .inbox-name{font-size:20px;font-weight:600;color:var(--dark)}
 .inbox-time{font-size:15px;color:#888}
 .inbox-preview{font-size:17px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inbox-act{background:#f3f3f3;color:#777;border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+.inbox-act:hover{border-color:var(--pink);color:var(--pink)}
 .empty-hint{text-align:center;font-size:18px;color:#aaa;padding:28px 0}
 /* 對話視窗 */
 #chat-view{display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;height:100dvh;background:var(--bg);z-index:400;flex-direction:column}
@@ -355,6 +357,9 @@ input:focus,textarea:focus{border-color:var(--pink)}
   <!-- 客服 -->
   <div class="tab-page" id="tab-msg-page">
     <div style="margin-top:0">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:9px">
+        <button id="inbox-toggle-hidden" onclick="toggleInboxHidden()" class="inbox-act"><span data-zh="顯示已隱藏" data-en="Show Hidden">顯示已隱藏</span></button>
+      </div>
       <div id="inbox-list" class="inbox-list"><p class="empty-hint">載入中...</p></div>
     </div>
   </div>
