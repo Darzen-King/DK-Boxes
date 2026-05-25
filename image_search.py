@@ -4,272 +4,233 @@ import json
 import time
 from urllib.parse import quote, unquote
 import re
+import random
 
 class ImageSearcher:
     def __init__(self):
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # 多個 User-Agent 輪換
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+        ]
+
+        self.watermark_keywords = [
+            'watermark', 'getty', 'shutterstock', 'dreamstime',
+            'istockphoto', 'alamy', '圖片來自', '水印', 'logo'
+        ]
+
+    def _get_headers(self):
+        """獲取隨機請求頭"""
+        return {
+            'User-Agent': random.choice(self.user_agents),
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
             'Accept-Encoding': 'gzip, deflate, br',
             'DNT': '1',
             'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
         }
-        self.watermark_keywords = [
-            'watermark', 'getty', 'shutterstock', 'dreamstime',
-            'istockphoto', 'alamy', '圖片來自', '水印', 'logo',
-            'corbis', 'pond5', 'bigstock'
-        ]
 
     def search(self, product_name, max_results=20):
-        """搜尋產品圖片，使用多個來源"""
+        """搜尋產品圖片"""
         all_results = []
 
-        # 優先搜尋 Bing（通常更穩定）
-        try:
-            bing_results = self._search_bing_new(product_name, max_results)
-            all_results.extend(bing_results)
-            print(f"✓ Bing: {len(bing_results)} images")
-        except Exception as e:
-            print(f"✗ Bing error: {e}")
+        # 嘗試多個搜尋源
+        sources = [
+            ('Bing', self._search_bing),
+            ('Google', self._search_google),
+            ('DuckDuckGo', self._search_duckduckgo),
+        ]
 
-        # 補充 Google 搜尋
-        try:
-            google_results = self._search_google_new(product_name, max_results)
-            all_results.extend(google_results)
-            print(f"✓ Google: {len(google_results)} images")
-        except Exception as e:
-            print(f"✗ Google error: {e}")
+        for source_name, search_func in sources:
+            try:
+                results = search_func(product_name, max_results)
+                if results:
+                    all_results.extend(results)
+                    print(f"✓ {source_name}: {len(results)} images found")
+                    if len(all_results) >= max_results:
+                        break
+            except Exception as e:
+                print(f"✗ {source_name}: {str(e)}")
+                continue
 
         # 去重並排序
-        unique_results = self._deduplicate_and_sort(all_results, max_results)
+        unique_results = self._deduplicate_and_sort(all_results)
+        print(f"✓ Total: {len(unique_results)} unique images\n")
 
-        print(f"✓ Total: {len(unique_results)} unique images")
         return unique_results[:max_results]
 
-    def _search_bing_new(self, product_name, max_results=20):
-        """改進的 Bing 搜尋"""
+    def _search_bing(self, product_name, max_results=25):
+        """Bing 圖片搜尋"""
         results = []
         try:
-            url = f"https://www.bing.com/images/search?q={quote(product_name)}"
-
+            url = f"https://www.bing.com/images/search?q={quote(product_name)}&count=150"
             session = requests.Session()
-            response = session.get(url, headers=self.headers, timeout=15)
+
+            response = session.get(url, headers=self._get_headers(), timeout=20)
             response.encoding = 'utf-8'
 
-            # 策略 1：提取 murl
-            pattern_murl = r'"murl":"([^"]+)"'
-            matches = re.findall(pattern_murl, response.text)
-            for img_url in matches[:max_results * 2]:
-                try:
-                    img_url = unquote(img_url).replace('\\/', '/')
-                    if self._is_valid_url(img_url):
-                        results.append({
-                            'url': img_url,
-                            'title': product_name,
-                            'source': 'Bing',
-                            'has_watermark': False,
-                            'quality_score': 85
-                        })
-                except:
-                    pass
+            # 多種模式提取 URL
+            patterns = [
+                (r'"murl":"([^"]+)"', 'murl'),
+                (r'"imgUrl":"([^"]+)"', 'imgUrl'),
+                (r'data-src="([^"]+)"', 'data-src'),
+                (r'src="([^"]+\.(?:jpg|jpeg|png|webp|gif))"', 'src'),
+            ]
 
-            # 策略 2：提取 imgUrl
-            pattern_imgurl = r'"imgUrl":"([^"]+)"'
-            matches = re.findall(pattern_imgurl, response.text)
-            for img_url in matches[:max_results * 2]:
-                try:
-                    img_url = unquote(img_url).replace('\\/', '/')
-                    if self._is_valid_url(img_url) and img_url not in [r['url'] for r in results]:
-                        results.append({
-                            'url': img_url,
-                            'title': product_name,
-                            'source': 'Bing',
-                            'has_watermark': False,
-                            'quality_score': 85
-                        })
-                except:
-                    pass
-
-            # 策略 3：提取 image src
-            soup = BeautifulSoup(response.text, 'html.parser')
-            img_tags = soup.find_all('img', limit=max_results * 3)
-            for img in img_tags:
-                try:
-                    src = img.get('src') or img.get('data-src') or img.get('data-url')
-                    if src and src.startswith('http') and self._is_valid_url(src):
-                        if src not in [r['url'] for r in results]:
+            for pattern, source_type in patterns:
+                matches = re.findall(pattern, response.text, re.IGNORECASE)
+                for match in matches[:max_results * 2]:
+                    try:
+                        img_url = unquote(match).replace('\\/', '/')
+                        if self._is_valid_url(img_url):
                             results.append({
-                                'url': src,
-                                'title': product_name,
-                                'source': 'Bing',
+                                'url': img_url,
+                                'source': f'Bing ({source_type})',
                                 'has_watermark': False,
-                                'quality_score': 80
+                                'quality_score': 85
                             })
-                except:
-                    pass
+                    except:
+                        pass
+
+                if len(results) >= max_results:
+                    break
 
         except Exception as e:
             print(f"Bing error: {e}")
 
         return results[:max_results]
 
-    def _search_google_new(self, product_name, max_results=20):
-        """改進的 Google Images 搜尋"""
+    def _search_google(self, product_name, max_results=25):
+        """Google 圖片搜尋"""
         results = []
         try:
             url = f"https://www.google.com/search?q={quote(product_name)}&tbm=isch"
-
             session = requests.Session()
-            response = session.get(url, headers=self.headers, timeout=15)
+
+            response = session.get(url, headers=self._get_headers(), timeout=20)
             response.encoding = 'utf-8'
 
-            # 策略 1：提取 imgUrl JSON
-            pattern_imgurl = r'"imgUrl":"([^"\\]*(?:\\.[^"\\]*)*)"'
-            matches = re.findall(pattern_imgurl, response.text)
-            for img_url in matches:
-                try:
-                    img_url = img_url.replace('\\/', '/')
-                    if self._is_valid_url(img_url):
-                        results.append({
-                            'url': img_url,
-                            'title': product_name,
-                            'source': 'Google',
-                            'has_watermark': False,
-                            'quality_score': 88
-                        })
-                except:
-                    pass
+            # 更全面的正則表達式
+            patterns = [
+                (r'"ou":"([^"\\]*(?:\\.[^"\\]*)*)"', 'ou'),
+                (r'"imgUrl":"([^"\\]*(?:\\.[^"\\]*)*)"', 'imgUrl'),
+                (r'"actualImageUrl":"([^"\\]*(?:\\.[^"\\]*)*)"', 'actualImageUrl'),
+                (r'"iurl":"([^"]+)"', 'iurl'),
+                (r'imgurl=([^&]+)&', 'imgurl_param'),
+            ]
 
-            # 策略 2：提取 actualImageUrl
-            pattern_actual = r'"actualImageUrl":"([^"\\]*(?:\\.[^"\\]*)*)"'
-            matches = re.findall(pattern_actual, response.text)
-            for img_url in matches:
-                try:
-                    img_url = img_url.replace('\\/', '/')
-                    if self._is_valid_url(img_url) and img_url not in [r['url'] for r in results]:
-                        results.append({
-                            'url': img_url,
-                            'title': product_name,
-                            'source': 'Google',
-                            'has_watermark': False,
-                            'quality_score': 87
-                        })
-                except:
-                    pass
+            for pattern, source_type in patterns:
+                matches = re.findall(pattern, response.text)
+                for match in matches[:max_results * 2]:
+                    try:
+                        img_url = match.replace('\\/', '/')
+                        if isinstance(img_url, str) and img_url.startswith('http'):
+                            if self._is_valid_url(img_url):
+                                results.append({
+                                    'url': img_url,
+                                    'source': f'Google ({source_type})',
+                                    'has_watermark': False,
+                                    'quality_score': 88
+                                })
+                    except:
+                        pass
 
-            # 策略 3：提取 ou（原始 URL）
-            pattern_ou = r'"ou":"([^"\\]*(?:\\.[^"\\]*)*)"'
-            matches = re.findall(pattern_ou, response.text)
-            for img_url in matches:
-                try:
-                    img_url = img_url.replace('\\/', '/')
-                    if self._is_valid_url(img_url) and img_url not in [r['url'] for r in results]:
-                        results.append({
-                            'url': img_url,
-                            'title': product_name,
-                            'source': 'Google',
-                            'has_watermark': False,
-                            'quality_score': 90
-                        })
-                except:
-                    pass
-
-            # 策略 4：提取 image src（備用）
-            soup = BeautifulSoup(response.text, 'html.parser')
-            img_tags = soup.find_all('img', limit=max_results * 3)
-            for img in img_tags:
-                try:
-                    src = img.get('src')
-                    if src and src.startswith('http') and self._is_valid_url(src):
-                        if src not in [r['url'] for r in results]:
-                            results.append({
-                                'url': src,
-                                'title': product_name,
-                                'source': 'Google',
-                                'has_watermark': False,
-                                'quality_score': 75
-                            })
-                except:
-                    pass
+                if len(results) >= max_results:
+                    break
 
         except Exception as e:
             print(f"Google error: {e}")
 
         return results[:max_results]
 
-    def _deduplicate_and_sort(self, results, max_results):
-        """去重並排序結果"""
+    def _search_duckduckgo(self, product_name, max_results=25):
+        """DuckDuckGo 圖片搜尋（備用）"""
+        results = []
+        try:
+            url = f"https://duckduckgo.com/i.js?q={quote(product_name)}&l=en-us&o=json&p=1&s=0&vqd=none"
+
+            response = requests.get(url, headers=self._get_headers(), timeout=20)
+
+            try:
+                data = response.json()
+                for result in data.get('results', [])[:max_results]:
+                    img_url = result.get('image') or result.get('url')
+                    if img_url and self._is_valid_url(img_url):
+                        results.append({
+                            'url': img_url,
+                            'source': 'DuckDuckGo',
+                            'has_watermark': False,
+                            'quality_score': 82
+                        })
+            except:
+                pass
+
+        except Exception as e:
+            print(f"DuckDuckGo error: {e}")
+
+        return results[:max_results]
+
+    def _deduplicate_and_sort(self, results):
+        """去重並排序"""
         unique_results = []
         seen_urls = set()
 
         for result in results:
             url = result['url']
-            # 簡單的域名去重（避免同一域名出現太多次）
-            domain = self._extract_domain(url)
-
             if url not in seen_urls:
                 seen_urls.add(url)
-                # 檢測水印
-                result['has_watermark'] = self._detect_watermark(url + result.get('title', ''))
+                result['has_watermark'] = self._detect_watermark(url)
                 unique_results.append(result)
 
-        # 按質量排序
+        # 排序：無水印優先，質量分高優先
         unique_results.sort(key=lambda x: (
-            x['has_watermark'],  # 無水印優先
-            -x['quality_score'],  # 質量分高優先
-            x['source']  # Google 優先於 Bing
+            x['has_watermark'],
+            -x['quality_score']
         ))
 
-        return unique_results[:max_results]
+        return unique_results
 
     def _is_valid_url(self, url):
-        """檢查 URL 是否有效"""
+        """驗證 URL"""
         if not url or not isinstance(url, str):
             return False
 
-        # 必須以 http 開頭
         if not (url.startswith('http://') or url.startswith('https://')):
             return False
 
-        # URL 長度合理
-        if len(url) < 25 or len(url) > 2500:
+        if len(url) < 25 or len(url) > 3000:
             return False
 
-        # 排除明顯無效的 URL
-        invalid_patterns = [
+        # 排除無效 URL
+        invalid = [
             'google.com/images',
-            '1x1', '1x2', '2x1',
+            'duckduckgo',
+            '1x1', '2x1',
             'pixel', 'transparent',
             'data:image',
             'base64',
             'placeholder',
-            '.svg',
             'spacer',
             '/ads/',
-            '/tracker',
-            'doubleclick'
         ]
 
         url_lower = url.lower()
-        for pattern in invalid_patterns:
+        for pattern in invalid:
             if pattern in url_lower:
                 return False
 
         return True
 
-    def _extract_domain(self, url):
-        """提取域名"""
-        try:
-            from urllib.parse import urlparse
-            domain = urlparse(url).netloc
-            return domain
-        except:
-            return ''
-
     def _detect_watermark(self, text):
-        """檢測水印標記"""
+        """檢測水印"""
         if not text:
             return False
 
