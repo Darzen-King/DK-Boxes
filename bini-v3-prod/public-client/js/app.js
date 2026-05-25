@@ -861,7 +861,7 @@ function listenForPoints(token) {
     if(d.status==='completed'&&d.pointsAwarded>0){
       pointsListener();pointsListener=null;
       const tier=getTierBySpent(d.totalSpent||0);
-      showEarnModal(d.pointsAwarded,d.amount,tier,d.newTotalPts||0);
+      showEarnModal(d.pointsAwarded,d.amount,tier,d.newTotalPts||0,d.birthdayBonus===true,d.basePoints||0);
       loadHomeData();
     }
     if(d.status==='cancelled'){
@@ -877,14 +877,17 @@ function listenForPoints(token) {
 function showScanError(msg) {
   document.getElementById('scan-status').textContent=msg;
 }
-function showEarnModal(pts,amount,tier,newTotal) {
-  document.getElementById('modal-icon').textContent='🎉';
+function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0) {
+  document.getElementById('modal-icon').textContent=birthdayBonus?'🎂':'🎉';
   document.getElementById('modal-icon').className='modal-icon';
-  document.getElementById('modal-title').textContent=t('集點成功！恭喜獲得點數','Points Added! Congratulations!');
+  document.getElementById('modal-title').textContent=birthdayBonus
+    ? t('生日快樂！今日點數加倍 🎉','Happy Birthday! Double Points Today 🎉')
+    : t('集點成功！恭喜獲得點數','Points Added! Congratulations!');
   document.getElementById('modal-pts').textContent='+'+(Number.isInteger(pts)?pts:pts.toFixed(1));
   document.getElementById('modal-pts').className='modal-pts';
   document.getElementById('modal-earn-detail').style.display='block';
   document.getElementById('modal-earn-detail').innerHTML=
+    (birthdayBonus?`🎂 ${t('今天是您的生日，點數加倍贈送！','Birthday bonus: points doubled!')}${basePoints?`（${t('原','base')} ${Number.isInteger(basePoints)?basePoints:basePoints.toFixed(1)} ×2）`:''}<br>`:'')+
     `💳 ${t('消費','Spent')} NT$${amount.toLocaleString()}<br>`+
     `${tier.icon} ${lang==='zh'?tier.name.zh:tier.name.en}（${lang==='zh'?tier.label.zh:tier.label.en}）<br>`+
     `🏆 ${t('目前共','Total')} <strong>${Number.isInteger(newTotal)?newTotal.toLocaleString():newTotal.toFixed(1)}</strong> ${t('點','pts')}`;
