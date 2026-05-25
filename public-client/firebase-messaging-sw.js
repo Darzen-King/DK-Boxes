@@ -58,7 +58,7 @@ self.addEventListener('notificationclick', e => {
   );
 });
 
-const CACHE = 'bini-v3.0.44-PROD-prod';
+const CACHE = 'bini-v3.0.45-PROD-prod';
 self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
 self.addEventListener('activate', e => {
   e.waitUntil(
@@ -67,8 +67,20 @@ self.addEventListener('activate', e => {
       .then(() => self.clients.claim())
   );
 });
+// Network-first：永遠優先取最新版本，離線時才回退快取
+// （配合 hosting 的 no-cache 標頭，部署後使用者即可看到最新資料）
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  if (/firebase|googleapis|gstatic/.test(e.request.url)) return;
-  e.respondWith(caches.match(e.request).then(c => c || fetch(e.request)));
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  if (/firebase|googleapis|gstatic/.test(req.url)) return;
+  if (new URL(req.url).origin !== self.location.origin) return;
+  e.respondWith(
+    fetch(req)
+      .then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(req))
+  );
 });

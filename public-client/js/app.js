@@ -72,8 +72,8 @@ window.setLang = function(l) {
   lang = l; localStorage.setItem('bini_lang', l);
   document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', (b.getAttribute('onclick')||'').includes(`'${l}'`)));
   ['zh','en'].forEach(x => {
-    const el = document.getElementById('lbtn-'+x); if(el) el.classList.toggle('active', x===l);
-    const shopEl = document.getElementById('shop-lbtn-'+x); if(shopEl) shopEl.classList.toggle('active', x===l);
+    const el = document.getElementById('lbtn-'+x); if(el){ el.classList.toggle('act', x===l); el.classList.toggle('inact', x!==l); }
+    const shopEl = document.getElementById('shop-lbtn-'+x); if(shopEl){ shopEl.classList.toggle('act', x===l); shopEl.classList.toggle('inact', x!==l); }
   });
   applyLang();
 
@@ -1330,7 +1330,7 @@ function showInAppNotification(title, body, type) {
 window.updateShopLangBtns = function() {
   const l = lang;
   ['zh','en'].forEach(x => {
-    const el = document.getElementById('shop-lbtn-'+x); if(el) el.classList.toggle('active', x===l);
+    const el = document.getElementById('shop-lbtn-'+x); if(el){ el.classList.toggle('act', x===l); el.classList.toggle('inact', x!==l); }
   });
 };
 

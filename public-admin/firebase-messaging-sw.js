@@ -31,7 +31,7 @@ self.addEventListener('notificationclick', e => {
   e.waitUntil(clients.openWindow(e.notification.data?.url || '/'));
 });
 
-const CACHE = 'bini-admin-v3.0.44-PROD-prod';
+const CACHE = 'bini-admin-v3.0.45-PROD-prod';
 self.addEventListener('install', e => { e.waitUntil(self.skipWaiting()); });
 self.addEventListener('activate', e => {
   e.waitUntil(

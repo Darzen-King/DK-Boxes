@@ -603,25 +603,21 @@
 <script type="module" src="/js/app.js"></script>
 <script>
 if('serviceWorker' in navigator){
+  // 新版 SW 接管時自動重新整理一次，部署後使用者即可看到最新版（無需手動清除快取）
+  let _swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(_swReloaded) return; _swReloaded = true; location.reload();
+  });
   window.addEventListener('load', async () => {
     try {
-      // 先清除所有舊的 unregistered SW
+      // 只清除「非本站」的舊 SW，避免動到推播用的 firebase-messaging-sw.js
       const regs = await navigator.serviceWorker.getRegistrations();
       for(const reg of regs){
-        const sw = reg.active || reg.waiting || reg.installing;
-        const url = sw?.scriptURL || '';
-        // 只保留屬於本站的 SW
-        if(!url.includes(location.origin)){
-          await reg.unregister();
-          console.log('清除舊 SW:', url);
-        }
+        const url = (reg.active || reg.waiting || reg.installing)?.scriptURL || '';
+        if(url && !url.includes(location.origin)){ await reg.unregister(); }
       }
-      // 只保留 firebase-messaging-sw.js（負責推播+快取），sw.js 已廢棄
-      // 清除所有舊 SW registration 再重新註冊，確保不殘留舊版
-      const allRegs = await navigator.serviceWorker.getRegistrations();
-      for(const reg of allRegs){ await reg.unregister(); }
+      // 註冊 firebase-messaging-sw.js（負責推播 + 快取）；updateViaCache:'none' 確保每次都抓最新 SW
       const r = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {updateViaCache:'none'});
-      console.log('SW 已註冊:', r.scope);
       await r.update();
     } catch(e) { console.log('SW 錯誤:', e); }
   });
