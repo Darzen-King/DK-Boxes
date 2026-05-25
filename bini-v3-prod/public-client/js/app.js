@@ -364,13 +364,14 @@ window.handleCompleteRegister = async function() {
       descEn: 'Welcome bonus points',
       createdAt: serverTimestamp(),
     });
-    // 推薦碼（選填）：套用成功則新會員 +10
-    let referralBonus = 0;
+    // 推薦碼（選填）：僅記錄推薦關係，新會員不會額外加點；
+    // 推薦人的回饋待此新會員首次消費集點時才發放。
+    let referralApplied = false;
     const refCode = (document.getElementById('reg-referral')?.value || '').trim().toUpperCase();
     if (refCode) {
       try {
         const r = await callFn('applyReferralCode', { code: refCode });
-        if (r?.success) referralBonus = r.bonus || 10;
+        if (r?.success) referralApplied = true;
       } catch(refErr) {
         // 推薦碼無效不影響註冊，僅提示
         console.log('applyReferralCode:', refErr.code || refErr.message);
@@ -386,8 +387,8 @@ window.handleCompleteRegister = async function() {
     const pwInput = document.getElementById('inp-password');
     if (pwInput) pwInput.value = '';
     setMsg(document.getElementById('login-msg'),
-      referralBonus > 0
-        ? t(`✅ 註冊成功！推薦碼 +${referralBonus} 點已入帳，請登入`,`✅ Registered! +${referralBonus} referral pts added. Please sign in`)
+      referralApplied
+        ? t('✅ 註冊成功！推薦碼已套用，請登入','✅ Registered! Referral code applied. Please sign in')
         : t('✅ 註冊成功！請用手機號碼與密碼登入','✅ Registered! Please sign in with your phone & password'),
       'success');
   } catch(e) {

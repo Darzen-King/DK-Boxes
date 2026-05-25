@@ -331,30 +331,14 @@ exports.applyReferralCode = onCall({ region: "us-central1" }, async (request) =>
   const referrerUid = refSnap.docs[0].id;
   if (referrerUid === uid) throw new HttpsError("failed-precondition", "不能使用自己的推薦碼");
 
-  const BONUS = 10;
-  const expiresAt = new Date();
-  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
-  const txRef = db.collection("transactions").doc();
-  const batchRef = db.collection("point_batches").doc();
-  await db.batch()
-    .update(memberRef, {
-      points: admin.firestore.FieldValue.increment(BONUS),
-      referredBy: referrerUid,
-      referralPending: true, // 待被推薦人首次集點後回饋推薦人
-    })
-    .set(txRef, {
-      uid, type: "referral_signup", points: BONUS,
-      desc: "輸入推薦碼獎勵", descEn: "Referral signup bonus",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
-    .set(batchRef, {
-      uid, points: BONUS, remaining: BONUS,
-      earnedAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt), txId: txRef.id,
-    })
-    .commit();
+  // 只記錄推薦關係，不發點給新會員（新人只拿原本的歡迎贈點）；
+  // 推薦人的 +10 待被推薦人首次集點時才發放（見 maybePayReferralReward）。
+  await memberRef.update({
+    referredBy: referrerUid,
+    referralPending: true,
+  });
 
-  return { success: true, bonus: BONUS };
+  return { success: true };
 });
 
 // 被推薦人首次集點後，回饋推薦人 +10（由 onEarnTransaction 觸發；以 referralPending 旗標保證只發一次）
