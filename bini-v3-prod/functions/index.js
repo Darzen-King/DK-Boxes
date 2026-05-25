@@ -1,0 +1,834 @@
+/**
+ * BINI Blooms — Firebase Cloud Functions
+ * Version: 3.0.5  (firebase-functions v2 / Node 22)
+ */
+
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule }                    = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated }             = require("firebase-functions/v2/firestore");
+const { defineString, defineBoolean }   = require("firebase-functions/params");
+const admin  = require("firebase-admin");
+// Node 22 內建 fetch，不需要 node-fetch
+const crypto = require("crypto");
+const XLSX   = require("xlsx");
+
+admin.initializeApp();
+const db = admin.firestore();
+
+// ─────────────────────────────────────────────
+// 環境變數定義（params）
+// ─────────────────────────────────────────────
+const APP_BASE_URL               = defineString("APP_BASE_URL",               { default: "https://bini-blooms-client.web.app" });
+// 寄件人資訊
+
+// ─────────────────────────────────────────────
+// 業務規則常數
+// ─────────────────────────────────────────────
+const RULES = {
+  PPD: 0.005,
+  POINT_TO_NTD: 1,
+  POINTS_EXPIRE_MONTHS: 3,
+  QR_EXPIRE_SECONDS: 120,
+  TIER_RATES: { normal:1.0, vip:1.3, vvip:1.5, vvvip:2.0 },
+  TIER_THRESHOLDS: [0, 10000, 15000, 20000],
+  TIER_NAMES: ["normal", "vip", "vvip", "vvvip"],
+  SHOP_POINT_MIN_ORDER: 300,
+  SHOP_POINT_MAX_RATIO: 0.3,
+  CVS_EXPIRE_HOURS: 72,
+};
+
+// ─────────────────────────────────────────────
+async function sendPush(uid, title, body, data = {}) {
+  try {
+    const snap = await db.collection("push_tokens").doc(uid).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+
+    // 收集所有有效 token（支援新版 tokens map 和舊版單一 token）
+    const tokens = [];
+    if (d.tokens && typeof d.tokens === "object") {
+      Object.values(d.tokens).forEach(t => { if (t) tokens.push(t); });
+    } else if (d.token) {
+      tokens.push(d.token);
+    }
+    if (!tokens.length) return;
+
+    // ⚠️ 純 data 訊息：不帶 notification 欄位，避免 FCM 自動顯示 + SW 各顯示一次（重複推播）
+    // SW 的 onBackgroundMessage 統一負責顯示通知
+    const msg = {
+      data: {
+        ...Object.fromEntries(Object.entries(data).map(([k,v])=>[k,String(v)])),
+        title, body,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+      },
+      webpush: { fcmOptions: { link: "https://bini-blooms-dev-client.web.app" } },
+      android: { priority: "high" },
+      apns: {
+        headers: { "apns-priority": "10" },
+        payload: { aps: { sound: "default", "content-available": 1 } },
+      },
+    };
+
+    // 多 token 同時推播
+    if (tokens.length === 1) {
+      await admin.messaging().send({ ...msg, token: tokens[0] });
+    } else {
+      await admin.messaging().sendEachForMulticast({ ...msg, tokens });
+    }
+    console.log(`✅ Push sent to ${uid}: ${title}`);
+  } catch (e) {
+    console.warn("Push failed:", e.message);
+  }
+}
+
+// ── 更新所有會員本月排名（每次集點後背景執行）──
+async function updateMonthlyRanks() {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  console.log(`[updateMonthlyRanks] 開始，monthStart=${monthStart.toISOString()}`);
+
+  // 查本月所有 earn 交易
+  const txSnap = await db.collection("transactions")
+    .where("type", "==", "earn")
+    .where("createdAt", ">=", admin.firestore.Timestamp.fromDate(monthStart))
+    .get();
+
+  console.log(`[updateMonthlyRanks] 查到 ${txSnap.size} 筆本月 earn 交易`);
+
+  // 加總每位會員本月點數
+  const monthPts = {};
+  txSnap.forEach(doc => {
+    const { uid, points } = doc.data();
+    if (uid) monthPts[uid] = Math.round(((monthPts[uid] || 0) + (points || 0)) * 10) / 10;
+  });
+
+  console.log(`[updateMonthlyRanks] 涉及 ${Object.keys(monthPts).length} 位會員`);
+
+  // 依點數排序，計算名次（同分同名）
+  const sorted = Object.entries(monthPts).sort((a, b) => b[1] - a[1]);
+  const rankMap = {};
+  let rank = 1;
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i][1] < sorted[i-1][1]) rank = i + 1;
+    rankMap[sorted[i][0]] = { rank, monthPts: sorted[i][1], total: sorted.length };
+  }
+
+  // 批次寫入每位會員的排名（每批最多 400 筆）
+  const uids = Object.keys(rankMap);
+  console.log(`[updateMonthlyRanks] 準備寫入 ${uids.length} 位會員排名`);
+  for (let i = 0; i < uids.length; i += 400) {
+    const batch = db.batch();
+    uids.slice(i, i + 400).forEach(uid => {
+      batch.set(db.collection("members").doc(uid), {
+        monthlyRank:   rankMap[uid].rank,
+        monthlyPts:    rankMap[uid].monthPts,
+        monthlyTotal:  rankMap[uid].total,
+        rankUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+    await batch.commit();
+    console.log(`[updateMonthlyRanks] 寫入第 ${i+1}~${Math.min(i+400, uids.length)} 筆完成`);
+  }
+  console.log(`✅ [updateMonthlyRanks] 完成，共更新 ${uids.length} 位會員`);
+}
+
+async function checkAdmin(uid) {
+  const doc = await db.collection("admins").doc(uid).get();
+  return doc.exists && doc.data()?.active === true;
+}
+
+// 推播給所有店家端（讀 admin_tokens 集合）
+async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://bini-blooms-dev-admin.web.app") {
+  try {
+    const adminSnap = await db.collection("admin_tokens").get();
+    const tokens = [];
+    adminSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.devices && typeof d.devices === "object") {
+        Object.values(d.devices).forEach(device => {
+          if (device.token) tokens.push(device.token);
+        });
+      }
+    });
+    if (!tokens.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
+
+    const msg = {
+      data: {
+        ...Object.fromEntries(Object.entries(data).map(([k,v])=>[k,String(v)])),
+        title, body,
+      },
+      webpush: { fcmOptions: { link: adminWebUrl } },
+      android: { priority: "high" },
+      apns: {
+        headers: { "apns-priority": "10" },
+        payload: { aps: { sound: "default", "content-available": 1 } },
+      },
+      tokens,
+    };
+    const result = await admin.messaging().sendEachForMulticast(msg);
+    console.log(`✅ sendPushToAdmins: ${title}，成功 ${result.successCount}，失敗 ${result.failureCount}`);
+  } catch (e) {
+    console.warn("sendPushToAdmins failed:", e.message);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  既有功能：集點、兌換
+// ═══════════════════════════════════════════
+
+exports.confirmPoints = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const { tokenId, amount } = request.data;
+  if (!tokenId || !amount || amount <= 0)
+    throw new HttpsError("invalid-argument", "參數錯誤");
+
+  const tokenRef = db.collection("qr_tokens").doc(tokenId);
+  const memberUid = await db.runTransaction(async t => {
+    const tokenDoc = await t.get(tokenRef);
+    if (!tokenDoc.exists) throw new HttpsError("not-found", "Token 不存在");
+    const td = tokenDoc.data();
+    if (td.used) throw new HttpsError("already-exists", "Token 已使用");
+    if (td.expiresAt.toDate() < new Date())
+      throw new HttpsError("deadline-exceeded", "Token 已過期");
+    t.update(tokenRef, { used: true, confirmedAt: admin.firestore.FieldValue.serverTimestamp() });
+    return td.usedBy;
+  });
+
+  const memberRef = db.collection("members").doc(memberUid);
+  const memberDoc = await memberRef.get();
+  const member = memberDoc.data();
+  const rate = RULES.TIER_RATES[member.tier] || 1.0;
+  const rawPoints = Math.floor(amount * RULES.PPD * rate);
+
+  const now = new Date();
+  const expiresAt = new Date(now);
+  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
+
+  const txRef = db.collection("transactions").doc();
+  const batchRef = db.collection("point_batches").doc();
+  const newTotal = (member.points || 0) + rawPoints;
+  const newSpent = (member.totalSpent || 0) + amount;
+  const newTier = RULES.TIER_NAMES[RULES.TIER_THRESHOLDS.filter(t=>newSpent>=t).length - 1] || "normal";
+
+  await db.batch().set(txRef, {
+    uid: memberUid, amount, points: rawPoints, tier: member.tier,
+    rate, type: "earn", createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }).set(batchRef, {
+    uid: memberUid, points: rawPoints, consumed: 0,
+    earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+    txId: txRef.id,
+  }).update(memberRef, {
+    points: newTotal, totalSpent: newSpent, tier: newTier,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }).commit();
+
+  await sendPush(memberUid, "🎉 集點成功！",
+    `您獲得了 ${rawPoints} 點！目前共有 ${newTotal} 點。`);
+
+  // 更新本月排名
+  try {
+    await updateMonthlyRanks();
+  } catch(e) {
+    console.error("[confirmPoints] updateMonthlyRanks FAILED:", e.message, e.stack);
+  }
+
+  return { success: true, points: rawPoints, total: newTotal };
+});
+
+exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const { rewardId } = request.data;
+  const uid = request.auth.uid;
+
+  const [rewardDoc, memberDoc] = await Promise.all([
+    db.collection("rewards").doc(rewardId).get(),
+    db.collection("members").doc(uid).get(),
+  ]);
+  if (!rewardDoc.exists) throw new HttpsError("not-found", "獎品不存在");
+  const reward = rewardDoc.data();
+  const member = memberDoc.data();
+  if (!reward.available) throw new HttpsError("failed-precondition", "獎品已下架");
+  if (member.points < reward.pointsCost)
+    throw new HttpsError("failed-precondition", "點數不足");
+
+  const batches = await db.collection("point_batches")
+    .where("uid","==",uid).where("consumed","<","points")
+    .orderBy("expiresAt","asc").get();
+  let remaining = reward.pointsCost;
+  const batchOps = db.batch();
+  for (const b of batches.docs) {
+    if (remaining <= 0) break;
+    const bd = b.data();
+    const available = bd.points - bd.consumed;
+    const deduct = Math.min(available, remaining);
+    batchOps.update(b.ref, { consumed: admin.firestore.FieldValue.increment(deduct) });
+    remaining -= deduct;
+  }
+  const txRef = db.collection("transactions").doc();
+  batchOps.set(txRef, {
+    uid, type: "redeem", rewardId, rewardName: reward.name_zh,
+    points: -reward.pointsCost, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  batchOps.update(db.collection("members").doc(uid), {
+    points: admin.firestore.FieldValue.increment(-reward.pointsCost),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  await batchOps.commit();
+  await sendPush(uid, "🎁 兌換成功！", `已兌換：${reward.name_zh}`);
+  return { success: true };
+});
+
+// ═══════════════════════════════════════════
+//  v3 新增：線上購物模組
+// ═══════════════════════════════════════════
+
+// ── 商品管理 ─────────────────────────────────
+
+exports.adminSaveProduct = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const isAdmin = await checkAdmin(request.auth.uid);
+  if (!isAdmin) throw new HttpsError("permission-denied", "無權限");
+
+  const { productId, name, price, description, stock, category, images, status, sortWeight, sku } = request.data;
+  if (!name || price == null || stock == null)
+    throw new HttpsError("invalid-argument", "必填欄位缺漏");
+
+  const payload = {
+    name: name.trim(),
+    sku: (sku || "").trim(),
+    price: Number(price),
+    description: description || "",
+    stock: Number(stock),
+    category: category || "其他",
+    images: images || [],
+    status: status || "active",
+    sortWeight: Number(sortWeight) || 0,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (productId) {
+    await db.collection("products").doc(productId).update(payload);
+    return { success: true, productId };
+  } else {
+    payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+    payload.salesCount = 0;
+    const ref = await db.collection("products").add(payload);
+    return { success: true, productId: ref.id };
+  }
+});
+
+exports.adminDeleteProduct = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const isAdmin = await checkAdmin(request.auth.uid);
+  if (!isAdmin) throw new HttpsError("permission-denied", "無權限");
+  await db.collection("products").doc(request.data.productId).update({
+    status: "deleted",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { success: true };
+});
+
+exports.adminBulkImportProducts = onCall(
+  { region: "us-central1", timeoutSeconds: 300, memory: "512MiB" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+    const isAdmin = await checkAdmin(request.auth.uid);
+    if (!isAdmin) throw new HttpsError("permission-denied", "無權限");
+
+    const { xlsxBase64 } = request.data;
+    if (!xlsxBase64) throw new HttpsError("invalid-argument", "缺少檔案資料");
+
+    const buf = Buffer.from(xlsxBase64, "base64");
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+    const REQUIRED = ["品名","售價","庫存"];
+    const results = { success: 0, failed: 0, errors: [] };
+    const batchSize = 400;
+    let batch = db.batch();
+    let count = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 2;
+      const missing = REQUIRED.filter(f => !row[f] && row[f] !== 0);
+      if (missing.length > 0) {
+        results.failed++;
+        results.errors.push({ row: rowNum, reason: `缺少必填欄位：${missing.join("、")}` });
+        continue;
+      }
+      const price = Number(row["售價"]);
+      const stock = Number(row["庫存"]);
+      if (isNaN(price) || price < 0) { results.failed++; results.errors.push({ row: rowNum, reason: "售價必須為非負數字" }); continue; }
+      if (isNaN(stock) || stock < 0) { results.failed++; results.errors.push({ row: rowNum, reason: "庫存必須為非負整數" }); continue; }
+
+      const images = [];
+      for (let n = 1; n <= 5; n++) {
+        const imgUrl = row[`圖片${n}`] || row[`image${n}`] || "";
+        if (imgUrl.trim()) images.push(imgUrl.trim());
+      }
+
+      const ref = db.collection("products").doc();
+      batch.set(ref, {
+        name: String(row["品名"]).trim(),
+        sku: String(row["SKU"] || row["sku"] || "").trim(), price, stock: Math.floor(stock),
+        description: String(row["商品描述"] || row["description"] || "").trim(),
+        category: String(row["分類"] || row["category"] || "其他").trim(),
+        images, status: String(row["狀態"] || "active").trim(),
+        sortWeight: Number(row["排序權重"] || 0), salesCount: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      count++;
+      results.success++;
+      if (count >= batchSize) { await batch.commit(); batch = db.batch(); count = 0; }
+    }
+    if (count > 0) await batch.commit();
+    return results;
+  }
+);
+
+// ── 購物車驗證 ────────────────────────────────
+
+exports.validateCart = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const { items } = request.data;
+  if (!items || !items.length) throw new HttpsError("invalid-argument", "購物車為空");
+
+  // 讀取購物規則（有設定用 Firestore，否則用預設值）
+  let pointMinOrder = RULES.SHOP_POINT_MIN_ORDER;
+  let freeShippingThreshold = 0;
+  try {
+    const rulesDoc = await db.collection("config").doc("shop_rules").get();
+    if (rulesDoc.exists) {
+      const r = rulesDoc.data();
+      if (r.pointMinOrder != null)         pointMinOrder         = r.pointMinOrder;
+      if (r.freeShippingThreshold != null) freeShippingThreshold = r.freeShippingThreshold;
+    }
+  } catch {}
+
+  const results = [];
+  let subtotal = 0;
+
+  for (const item of items) {
+    const doc = await db.collection("products").doc(item.productId).get();
+    if (!doc.exists || doc.data().status !== "active") {
+      results.push({ productId: item.productId, ok: false, reason: "商品已下架" });
+      continue;
+    }
+    const p = doc.data();
+    if (p.stock < item.qty) {
+      results.push({ productId: item.productId, ok: false,
+        reason: `庫存不足（剩餘 ${p.stock} 件）`, stock: p.stock });
+      continue;
+    }
+    subtotal += p.price * item.qty;
+    results.push({ productId: item.productId, ok: true, price: p.price,
+      name: p.name, image: p.images?.[0] || "" });
+  }
+
+  const allOk = results.every(r => r.ok);
+  let pointsBalance = 0;
+  let maxPointsDiscount = 0;
+  if (allOk && request.auth.uid) {
+    const memberDoc = await db.collection("members").doc(request.auth.uid).get();
+    if (memberDoc.exists) {
+      pointsBalance = memberDoc.data().points || 0;
+      if (subtotal >= pointMinOrder) {
+        const maxByRatio = Math.floor(subtotal * RULES.SHOP_POINT_MAX_RATIO);
+        maxPointsDiscount = Math.min(pointsBalance, maxByRatio);
+      }
+    }
+  }
+  return { allOk, results, subtotal, pointsBalance, maxPointsDiscount, pointMinOrder, freeShippingThreshold };
+});
+
+// ── 建立訂單（正式，含 ECPay）────────────────────
+
+exports.createOrder = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  try {
+  const uid = request.auth.uid;
+  const { items, pointsToUse, cvs, shippingFee: rawShipping } = request.data;
+
+  // 讀取購物規則
+  let pointMinOrder = RULES.SHOP_POINT_MIN_ORDER;
+  let freeShippingThreshold = 0;
+  try {
+    const rulesDoc = await db.collection("config").doc("shop_rules").get();
+    if (rulesDoc.exists) {
+      const r = rulesDoc.data();
+      if (r.pointMinOrder != null)         pointMinOrder         = r.pointMinOrder;
+      if (r.freeShippingThreshold != null) freeShippingThreshold = r.freeShippingThreshold;
+    }
+  } catch {}
+
+  if (!items?.length) throw new HttpsError("invalid-argument", "購物車為空");
+  if (!cvs?.storeName) throw new HttpsError("invalid-argument", "請選擇取貨超商");
+
+  const orderId = genOrderId();
+  let subtotal = 0;
+  const orderItems = [];
+
+  // ── Phase 1 & 2 & 3: 鎖庫存（讀後寫）──
+  await db.runTransaction(async t => {
+    const refs = items.map(item => db.collection("products").doc(item.productId));
+    const docs = await Promise.all(refs.map(ref => t.get(ref)));
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const doc = docs[i];
+      if (!doc.exists || doc.data().status !== "active")
+        throw new HttpsError("failed-precondition", `商品 ${item.productId} 已下架`);
+      const p = doc.data();
+      if (p.stock < item.qty)
+        throw new HttpsError("failed-precondition", `${p.name} 庫存不足（剩餘 ${p.stock} 件）`);
+      subtotal += p.price * item.qty;
+      orderItems.push({ productId: item.productId, name: p.name,
+        price: p.price, qty: item.qty, image: p.images?.[0] || "", sku: p.sku || "" });
+    }
+    for (let i = 0; i < items.length; i++) {
+      t.update(refs[i], {
+        stock: admin.firestore.FieldValue.increment(-items[i].qty),
+        salesCount: admin.firestore.FieldValue.increment(items[i].qty),
+      });
+    }
+  });
+
+  // ── 點數折扣 ──
+  const usePoints = Math.max(0, Number(pointsToUse) || 0);
+  let pointsDiscount = 0;
+  let pointsUsed = 0;
+  if (usePoints > 0) {
+    if (subtotal < pointMinOrder)
+      throw new HttpsError("failed-precondition", "未達使用點數最低消費門檻");
+    const memberDoc = await db.collection("members").doc(uid).get();
+    const member = memberDoc.data();
+    const maxDiscount = Math.floor(subtotal * RULES.SHOP_POINT_MAX_RATIO);
+    const canUse = Math.min(member.points, usePoints, maxDiscount);
+    pointsDiscount = canUse * RULES.POINT_TO_NTD;
+    pointsUsed = canUse;
+    await db.collection("members").doc(uid).update({
+      points: admin.firestore.FieldValue.increment(-canUse),
+      pointsPending: admin.firestore.FieldValue.increment(canUse),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  const totalAmount = Math.max(1, subtotal - pointsDiscount);
+  // 運費：7-11=65，全家=75；達免運門檻則免運
+  const shippingFeeMap = { UNIMART: 65, FAMI: 75 };
+  const baseShipping = shippingFeeMap[cvs.cvsType] ?? 65;
+  const isFreeShipping = freeShippingThreshold > 0 && subtotal >= freeShippingThreshold;
+  const shippingFee = isFreeShipping ? 0 : baseShipping;
+  const totalWithShipping = totalAmount + shippingFee;
+
+  // ── 寫入 Firestore 訂單（pending_shipment = 等待店主出貨）──
+  const orderRef = db.collection("orders").doc(orderId);
+  await orderRef.set({
+    orderId, uid, items: orderItems, subtotal,
+    pointsUsed, pointsDiscount, shippingFee,
+    totalAmount: totalWithShipping,
+    cvs,
+    status: "pending_shipment",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  // 通知後台新訂單
+  await db.collection("admin_notifications").add({
+    type: "new_order",
+    orderId,
+    totalAmount: totalWithShipping,
+    message: `新訂單 ${orderId}，NT$${totalWithShipping}（含運費NT$${shippingFee}），取貨門市：${cvs.storeName}`,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    read: false,
+  });
+
+  // 推播通知店家端（新訂單）
+  await sendPushToAdmins(
+    "🛍️ 新訂單！ New Order!",
+    `NT$${totalWithShipping}｜${cvs.storeName}｜${cvs.name}`,
+    { type: "new_order", orderId }
+  );
+
+  // 推播通知客戶
+  await sendPush(uid, "✅ 訂單建立成功！ | Order Confirmed",
+    `訂單 ${orderId} 已建立，店家已收到您的訂單，謝謝您選擇 BINI Blooms。\nOrder ${orderId} has been placed. Thank you for choosing BINI Blooms!`,
+    { type: "order_created", orderId }
+  );
+
+  return {
+    success: true,
+    orderId,
+    totalAmount: totalWithShipping,
+    pointsDiscount,
+    shippingFee,
+    storeName: cvs.storeName,
+    storeAddress: cvs.storeAddress,
+  };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    console.error("createOrder 未預期錯誤:", e.message, e.stack);
+    throw new HttpsError("internal", `系統錯誤：${e.message}`);
+  }
+});
+
+
+// ── 訂單管理
+
+exports.adminUpdateOrderStatus = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const isAdmin = await checkAdmin(request.auth.uid);
+  if (!isAdmin) throw new HttpsError("permission-denied", "無權限");
+
+  const { orderId, status, trackingNumber, note } = request.data;
+  const validStatuses = ["processing","shipped","completed","cancelled"];
+  if (!validStatuses.includes(status))
+    throw new HttpsError("invalid-argument", "無效的訂單狀態");
+
+  const orderRef = db.collection("orders").doc(orderId);
+  const orderDoc = await orderRef.get();
+  if (!orderDoc.exists) throw new HttpsError("not-found", "訂單不存在");
+  const order = orderDoc.data();
+
+  const updateData = {
+    status, note: note || "",
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (trackingNumber) updateData.trackingNumber = trackingNumber;
+  if (status === "shipped")   updateData.shippedAt   = admin.firestore.FieldValue.serverTimestamp();
+  if (status === "completed") updateData.completedAt = admin.firestore.FieldValue.serverTimestamp();
+
+  if (status === "cancelled" && order.status !== "cancelled") {
+    await db.runTransaction(async t => {
+      t.update(orderRef, updateData);
+      for (const item of order.items) {
+        const ref = db.collection("products").doc(item.productId);
+        t.update(ref, { stock: admin.firestore.FieldValue.increment(item.qty) });
+      }
+      if (order.pointsUsed > 0 && order.status === "paid") {
+        const memberRef = db.collection("members").doc(order.uid);
+        t.update(memberRef, {
+          points: admin.firestore.FieldValue.increment(order.pointsUsed),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        const txRef = db.collection("transactions").doc();
+        t.set(txRef, {
+          uid: order.uid, orderId, type: "shop_refund",
+          points: order.pointsUsed, note: `訂單 ${orderId} 取消點數回補`,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    });
+  } else {
+    await orderRef.update(updateData);
+  }
+
+  const pushMessages = {
+    processing: {
+      title: "📦 正在備貨中 | Preparing Your Order",
+      body:  `訂單 ${orderId} 正在備貨中，即將出貨。\nOrder ${orderId} is being prepared and will ship soon.`,
+    },
+    shipped: {
+      title: "🚚 已出貨 | Your Order Has Been Shipped",
+      body:  `訂單 ${orderId}${trackingNumber ? `，貨運單號：${trackingNumber}，` : "，"}已出貨，請收到簡訊通知後到取件超商領取。\nOrder ${orderId} has been shipped.${trackingNumber ? ` Tracking No.: ${trackingNumber}.` : ""} Please pick it up at your selected convenience store after receiving the SMS notification.`,
+    },
+    completed: {
+      title: "✅ 取貨完成 | Order Completed",
+      body:  `訂單 ${orderId} 已完成，感謝您的購物！\nOrder ${orderId} completed. Thank you for shopping with us! by Bini Blooms`,
+    },
+    cancelled: {
+      title: "❌ 訂單已取消 | Order Cancelled",
+      body:  `訂單 ${orderId} 已取消${order.pointsUsed > 0 ? `，${order.pointsUsed} 點數已回補` : ""}。\nOrder ${orderId} has been cancelled.${order.pointsUsed > 0 ? ` Your ${order.pointsUsed} points have been refunded.` : ""}`,
+    },
+  };
+  const msg = pushMessages[status];
+  if (msg) await sendPush(order.uid, msg.title, msg.body, { type:"order_status", orderId, status });
+  return { success: true };
+});
+
+exports.adminGetOrderList = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const isAdmin = await checkAdmin(request.auth.uid);
+  if (!isAdmin) throw new HttpsError("permission-denied", "無權限");
+
+  const { status, limit = 50, startAfter } = request.data;
+  let q = db.collection("orders").orderBy("createdAt","desc");
+  if (status && status !== "all") q = q.where("status","==",status);
+  if (startAfter) {
+    const cursor = await db.collection("orders").doc(startAfter).get();
+    q = q.startAfter(cursor);
+  }
+  q = q.limit(Math.min(Number(limit), 100));
+  const snap = await q.get();
+  const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return { orders, hasMore: orders.length === limit };
+});
+
+// ── 🧪 測試專用：直接寫入 paid 訂單 ─────────────
+
+
+// ── 定時任務 ─────────────────────────────────
+
+exports.scheduledOrderTimeout = onSchedule(
+  { schedule: "every 60 minutes", region: "us-central1" },
+  async () => {
+    const now = admin.firestore.Timestamp.now();
+    const snap = await db.collection("orders")
+      .where("status","==","pending_payment")
+      .where("paymentExpireAt","<=",now)
+      .get();
+    for (const doc of snap.docs) {
+      const order = doc.data();
+      await db.runTransaction(async t => {
+        t.update(doc.ref, { status: "expired", updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        for (const item of order.items) {
+          const ref = db.collection("products").doc(item.productId);
+          t.update(ref, { stock: admin.firestore.FieldValue.increment(item.qty) });
+        }
+        if (order.pointsUsed > 0) {
+          const memberRef = db.collection("members").doc(order.uid);
+          t.update(memberRef, {
+            points: admin.firestore.FieldValue.increment(order.pointsUsed),
+            pointsPending: admin.firestore.FieldValue.increment(-order.pointsUsed),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      });
+      await sendPush(order.uid, "⏰ 訂單已自動取消 | Order Cancelled",
+        `訂單 ${order.orderId} 因逾時未取，訂單已自動取消。\nOrder ${order.orderId} was automatically cancelled due to non-pickup.`);
+    }
+    console.log(`處理了 ${snap.size} 筆逾期訂單`);
+  }
+);
+
+exports.scheduledLowStockAlert = onSchedule(
+  { schedule: "every day 09:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => {
+    const snap = await db.collection("products")
+      .where("status","==","active")
+      .where("stock","<=",5)
+      .get();
+    if (snap.size === 0) return;
+    const items = snap.docs.map(d => `${d.data().name}（庫存：${d.data().stock}）`).join("\n");
+    await db.collection("admin_notifications").add({
+      type: "low_stock",
+      message: `以下商品庫存偏低：\n${items}`,
+      count: snap.size,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      read: false,
+    });
+    console.log(`低庫存商品：${snap.size} 件`);
+  }
+);
+
+// ── Firestore Trigger：notifications 新文件 → 自動推播 ──────────
+exports.onNotificationCreated = onDocumentCreated(
+  { document: "notifications/{notifId}", region: "us-central1" },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+
+    const { title, body, target, targetUid, type, url } = data;
+
+    try {
+      if (target === "all") {
+        // 廣播：推播給所有有 token 的用戶
+        const snap = await db.collection("push_tokens").get();
+        const tokens = [];
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d.tokens && typeof d.tokens === "object") {
+            Object.values(d.tokens).forEach(t => { if (t) tokens.push(t); });
+          } else if (d.token) {
+            tokens.push(d.token);
+          }
+        });
+
+        if (!tokens.length) { console.log("沒有任何推播 token"); return; }
+
+        // ⚠️ 純 data 訊息：SW 統一顯示，避免重複推播
+        const msg = {
+          data: { type: type || "announcement", url: url || "/", title: title || "BINI Blooms", body: body || "" },
+          webpush: { fcmOptions: { link: url || "https://bini-blooms-dev-client.web.app" } },
+          android: { priority: "high" },
+          apns: {
+            headers: { "apns-priority": "10" },
+            payload: { aps: { sound: "default", "content-available": 1 } },
+          },
+          tokens,
+        };
+
+        const result = await admin.messaging().sendEachForMulticast(msg);
+        console.log(`✅ 廣播推播：成功 ${result.successCount}，失敗 ${result.failureCount}`);
+
+      } else if (target) {
+        // 個人推播
+        const uid = targetUid || target;
+        await sendPush(uid, title || "BINI Blooms", body || "",
+          { type: type || "notification", url: url || "/" });
+        console.log(`✅ 個人推播 → ${uid}`);
+      }
+    } catch (e) {
+      console.error("推播失敗:", e.message);
+    }
+  }
+);
+
+// ── Firestore Trigger：客戶新訊息 → 推播給所有 Admin ────────────
+exports.onChatMessageCreated = onDocumentCreated(
+  { document: "chats/{chatId}/messages/{msgId}", region: "us-central1" },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || data.sender !== "user") return; // 只處理用戶訊息
+
+    const chatId = event.params.chatId;
+
+    try {
+      // 取得聊天室資訊
+      const chatDoc = await db.collection("chats").doc(chatId).get();
+      const memberName = chatDoc.data()?.memberName || "會員";
+      const msgText = data.text || (data.imageUrl ? "[圖片]" : "新訊息");
+
+      // 讀取所有 admin tokens
+      const adminSnap = await db.collection("admin_tokens").get();
+      const tokens = [];
+      adminSnap.forEach(doc => {
+        const d = doc.data();
+        if (d.devices && typeof d.devices === "object") {
+          Object.values(d.devices).forEach(device => {
+            if (device.token) tokens.push(device.token);
+          });
+        }
+      });
+
+      if (!tokens.length) { console.log("沒有 admin 推播 token"); return; }
+
+      await sendPushToAdmins(
+        `💬 ${memberName}`,
+        msgText.slice(0, 100),
+        { type: "chat", chatId, url: "/" }
+      );
+      console.log(`✅ Admin 推播：${memberName} 的新訊息`);
+    } catch (e) {
+      console.error("Admin 推播失敗:", e.message);
+    }
+  }
+);
+
+// ── 監聽新集點交易 → 自動更新排行榜 ──
+exports.onEarnTransaction = onDocumentCreated(
+  { document: "transactions/{txId}", region: "us-central1", database: "(default)" },
+  async (event) => {
+    const data = event.data?.data();
+    if (!data || data.type !== "earn") return;
+    console.log(`[onEarnTransaction] 偵測到新集點，uid=${data.uid}，points=${data.points}`);
+    try {
+      await updateMonthlyRanks();
+    } catch (e) {
+      console.error("[onEarnTransaction] updateMonthlyRanks FAILED:", e.message, e.stack);
+    }
+  }
+);

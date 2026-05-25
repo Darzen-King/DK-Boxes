@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "bini-blooms"
+  },
+  "targets": {
+    "bini-blooms": {
+      "hosting": {
+        "client": [
+          "bini-blooms-client"
+        ],
+        "admin": [
+          "bini-blooms-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
