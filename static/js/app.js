@@ -209,8 +209,9 @@ class ProductImageSearcher {
             imageHTML = `
                 <div class="image-grid">
                     ${images.map((img, idx) => `
-                        <div class="image-card">
-                            <div class="image-placeholder">🖼️</div>
+                        <div class="image-card" title="${img.url}">
+                            <img src="${img.url}" alt="${productName}" class="image-thumbnail"
+                                 onerror="this.parentElement.innerHTML='<div class=\"image-placeholder\">🖼️</div><div class=\"image-info\"><div class=\"image-source\">${img.source}</div></div>'">
                             <div class="image-info">
                                 <div class="image-source">${img.source}</div>
                                 ${img.has_watermark ? '<span class="watermark-badge">⚠️ 含水印</span>' : ''}
