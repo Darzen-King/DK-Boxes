@@ -130,6 +130,10 @@
         <label data-zh="確認密碼" data-en="Confirm Password">確認密碼</label>
         <input type="password" id="reg-password2" placeholder="再次輸入密碼">
       </div>
+      <div class="input-group">
+        <label data-zh="推薦碼（選填）" data-en="Referral Code (optional)">推薦碼（選填）</label>
+        <input type="text" id="reg-referral" placeholder="6 碼，選填" maxlength="6" autocomplete="off" style="text-transform:uppercase;letter-spacing:2px">
+      </div>
       <button class="btn-primary" onclick="handleCompleteRegister()">
         <span data-zh="完成加入會員" data-en="Complete Registration">完成加入會員</span>
       </button>
@@ -491,6 +495,18 @@
       <div class="info-list">
         <div class="info-row"><span class="info-key" data-zh="手機號碼" data-en="Phone">手機號碼</span><span class="info-val" id="info-phone"></span></div>
         <div class="info-row"><span class="info-key" data-zh="生日" data-en="Birthday">生日</span><span class="info-val" id="info-birthday"></span></div>
+      </div>
+      <div class="info-list" style="margin-top:14px">
+        <div class="info-row">
+          <span class="info-key" data-zh="我的推薦碼" data-en="My Referral Code">我的推薦碼</span>
+          <span style="display:flex;align-items:center;gap:10px">
+            <span class="info-val" id="profile-referral-code" style="font-weight:700;letter-spacing:3px;font-size:20px">…</span>
+            <button onclick="copyReferralCode()" style="background:var(--pale);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:14px;cursor:pointer" data-zh="複製" data-en="Copy">複製</button>
+          </span>
+        </div>
+        <div class="info-row" style="display:block;font-size:13px;color:#888;line-height:1.5">
+          <span data-zh="好友註冊輸入推薦碼即得 10 點；待好友首次消費集點，您也獲得 10 點回饋 🎁" data-en="Friend gets 10 pts on signup; you get 10 pts after their first purchase 🎁">好友註冊輸入推薦碼即得 10 點；待好友首次消費集點，您也獲得 10 點回饋 🎁</span>
+        </div>
       </div>
     </div>
   </div>

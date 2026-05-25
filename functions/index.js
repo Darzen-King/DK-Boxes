@@ -280,6 +280,122 @@ exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
 });
 
 // ═══════════════════════════════════════════
+//  推薦碼（好友推薦）
+//  - 每位會員有專屬推薦碼
+//  - 新會員輸入推薦碼即 +10（後端發放，繞過前端規則）
+//  - 推薦人於「被推薦人首次集點」後 +10 並收到推播（見 onEarnTransaction）
+// ═══════════════════════════════════════════
+
+function genReferralCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 去除易混淆字元 0/O/1/I
+  let s = "";
+  for (let i = 0; i < 6; i++) s += chars[crypto.randomInt(chars.length)];
+  return s;
+}
+
+// 取得（必要時產生）自己的推薦碼
+exports.getOrCreateReferralCode = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const uid = request.auth.uid;
+  const memberRef = db.collection("members").doc(uid);
+  const snap = await memberRef.get();
+  if (!snap.exists) throw new HttpsError("not-found", "會員不存在");
+  if (snap.data().referralCode) return { code: snap.data().referralCode };
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const code = genReferralCode();
+    const dup = await db.collection("members").where("referralCode", "==", code).limit(1).get();
+    if (!dup.empty) continue;
+    await memberRef.update({ referralCode: code });
+    return { code };
+  }
+  throw new HttpsError("internal", "產生推薦碼失敗，請重試");
+});
+
+// 新會員套用推薦碼：新人 +10，記錄推薦人並標記待回饋
+exports.applyReferralCode = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  const uid = request.auth.uid;
+  const code = String(request.data?.code || "").trim().toUpperCase();
+  if (!code) throw new HttpsError("invalid-argument", "請輸入推薦碼");
+
+  const memberRef = db.collection("members").doc(uid);
+  const memberSnap = await memberRef.get();
+  if (!memberSnap.exists) throw new HttpsError("not-found", "會員不存在");
+  const member = memberSnap.data();
+  if (member.referredBy) throw new HttpsError("already-exists", "您已使用過推薦碼");
+  if (member.referralCode === code) throw new HttpsError("failed-precondition", "不能使用自己的推薦碼");
+
+  const refSnap = await db.collection("members").where("referralCode", "==", code).limit(1).get();
+  if (refSnap.empty) throw new HttpsError("not-found", "推薦碼不存在");
+  const referrerUid = refSnap.docs[0].id;
+  if (referrerUid === uid) throw new HttpsError("failed-precondition", "不能使用自己的推薦碼");
+
+  const BONUS = 10;
+  const expiresAt = new Date();
+  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
+  const txRef = db.collection("transactions").doc();
+  const batchRef = db.collection("point_batches").doc();
+  await db.batch()
+    .update(memberRef, {
+      points: admin.firestore.FieldValue.increment(BONUS),
+      referredBy: referrerUid,
+      referralPending: true, // 待被推薦人首次集點後回饋推薦人
+    })
+    .set(txRef, {
+      uid, type: "referral_signup", points: BONUS,
+      desc: "輸入推薦碼獎勵", descEn: "Referral signup bonus",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .set(batchRef, {
+      uid, points: BONUS, remaining: BONUS,
+      earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt), txId: txRef.id,
+    })
+    .commit();
+
+  return { success: true, bonus: BONUS };
+});
+
+// 被推薦人首次集點後，回饋推薦人 +10（由 onEarnTransaction 觸發；以 referralPending 旗標保證只發一次）
+async function maybePayReferralReward(memberUid) {
+  if (!memberUid) return;
+  const memberRef = db.collection("members").doc(memberUid);
+  const REWARD = 10;
+  const claim = await db.runTransaction(async (t) => {
+    const m = await t.get(memberRef);
+    if (!m.exists) return null;
+    const md = m.data();
+    if (!md.referralPending || !md.referredBy) return null;
+    t.update(memberRef, { referralPending: false }); // 原子清旗標，避免重複發放
+    return { referrerUid: md.referredBy };
+  });
+  if (!claim) return;
+
+  const referrerRef = db.collection("members").doc(claim.referrerUid);
+  if (!(await referrerRef.get()).exists) return;
+  const expiresAt = new Date();
+  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
+  const txRef = db.collection("transactions").doc();
+  const batchRef = db.collection("point_batches").doc();
+  await db.batch()
+    .update(referrerRef, { points: admin.firestore.FieldValue.increment(REWARD) })
+    .set(txRef, {
+      uid: claim.referrerUid, type: "referral_reward", points: REWARD,
+      desc: "好友推薦獎勵", descEn: "Referral reward",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .set(batchRef, {
+      uid: claim.referrerUid, points: REWARD, remaining: REWARD,
+      earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt), txId: txRef.id,
+    })
+    .commit();
+  await sendPush(claim.referrerUid, "🎉 推薦獎勵到帳",
+    `您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
+}
+
+// ═══════════════════════════════════════════
 //  v3 新增：線上購物模組
 // ═══════════════════════════════════════════
 
@@ -829,6 +945,11 @@ exports.onEarnTransaction = onDocumentCreated(
       await updateMonthlyRanks();
     } catch (e) {
       console.error("[onEarnTransaction] updateMonthlyRanks FAILED:", e.message, e.stack);
+    }
+    try {
+      await maybePayReferralReward(data.uid); // 被推薦人首次集點 → 回饋推薦人
+    } catch (e) {
+      console.error("[onEarnTransaction] referral reward FAILED:", e.message, e.stack);
     }
   }
 );

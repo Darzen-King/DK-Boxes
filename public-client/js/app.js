@@ -18,6 +18,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js';
 import { getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js';
+
+const _fns = getFunctions(undefined, 'us-central1');
+async function callFn(name, data = {}) { const r = await httpsCallable(_fns, name)(data); return r.data; }
 
 // ── 會員等級設定 ──
 // VAPID Key 來自 Firebase Console → Project Settings → Cloud Messaging → 網路推播憑證
@@ -360,6 +364,19 @@ window.handleCompleteRegister = async function() {
       descEn: 'Welcome bonus points',
       createdAt: serverTimestamp(),
     });
+    // 推薦碼（選填）：套用成功則新會員 +10
+    let referralBonus = 0;
+    const refCode = (document.getElementById('reg-referral')?.value || '').trim().toUpperCase();
+    if (refCode) {
+      try {
+        const r = await callFn('applyReferralCode', { code: refCode });
+        if (r?.success) referralBonus = r.bonus || 10;
+      } catch(refErr) {
+        // 推薦碼無效不影響註冊，僅提示
+        console.log('applyReferralCode:', refErr.code || refErr.message);
+        setMsg(msgEl, t('推薦碼無效，已略過（帳號已建立）','Invalid referral code, skipped'), 'error');
+      }
+    }
     // 註冊成功後登出本次階段，回到登入首頁，讓新會員以手機＋密碼登入
     const newPhone = regPhone;
     await signOut(auth);
@@ -368,7 +385,11 @@ window.handleCompleteRegister = async function() {
     if (phoneInput) phoneInput.value = newPhone;
     const pwInput = document.getElementById('inp-password');
     if (pwInput) pwInput.value = '';
-    setMsg(document.getElementById('login-msg'), t('✅ 註冊成功！請用手機號碼與密碼登入','✅ Registered! Please sign in with your phone & password'), 'success');
+    setMsg(document.getElementById('login-msg'),
+      referralBonus > 0
+        ? t(`✅ 註冊成功！推薦碼 +${referralBonus} 點已入帳，請登入`,`✅ Registered! +${referralBonus} referral pts added. Please sign in`)
+        : t('✅ 註冊成功！請用手機號碼與密碼登入','✅ Registered! Please sign in with your phone & password'),
+      'success');
   } catch(e) {
     console.error('handleCompleteRegister:', e.code, e.message);
     const m = {
@@ -557,16 +578,21 @@ async function loadHomeData() {
       if (redeemMatch) return `Redeemed: ${redeemMatch[1]}`;
       // 新會員歡迎贈點
       if (desc === '新會員歡迎贈點') return 'Welcome bonus points';
+      // 推薦相關
+      if (desc === '輸入推薦碼獎勵') return 'Referral signup bonus';
+      if (desc === '好友推薦獎勵') return 'Referral reward';
       return desc;
     }
     docs.slice(0,15).forEach(tx=>{
       const isEarn=tx.type==='earn', isDeduct=tx.type==='deduct', isWelcome=tx.type==='welcome';
+      const isReferral=tx.type==='referral_signup'||tx.type==='referral_reward';
+      const isPos=isEarn||isWelcome||isReferral;
       const dateStr=tx.createdAt?tx.createdAt.toDate().toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'—';
       const item=document.createElement('div'); item.className='history-item';
-      item.innerHTML=`<div class="h-icon ${isEarn||isWelcome?'earn':isDeduct?'deduct':'redeem'}">${isWelcome?'🎁':isEarn?'+':isDeduct?'💰':'🎁'}</div>
+      item.innerHTML=`<div class="h-icon ${isPos?'earn':isDeduct?'deduct':'redeem'}">${isWelcome||isReferral?'🎁':isEarn?'+':isDeduct?'💰':'🎁'}</div>
         <div class="h-info"><div class="h-desc">${escHtml(translateDesc(tx.desc,tx.type)||t('紀錄','Record'))}</div>
         <div class="h-date">${dateStr}${tx.amount?' · NT$'+tx.amount.toLocaleString():''}</div></div>
-        <div class="h-pts ${isEarn||isWelcome?'earn':'deduct'}">${isEarn||isWelcome?'+':'-'}${tx.points}</div>`;
+        <div class="h-pts ${isPos?'earn':'deduct'}">${isPos?'+':'-'}${tx.points}</div>`;
       list.appendChild(item);
     });
   } catch(e) { console.error('loadHomeData:',e); }
@@ -1133,8 +1159,24 @@ async function loadProfile() {
       document.getElementById('tier-label').textContent=t('已達最高等級 💎','Top tier reached 💎');
       ['tier-from','tier-to','tier-progress','tier-next-rule'].forEach(id=>document.getElementById(id).textContent='');
     }
+    loadReferralCode();
   } catch(e){ console.error(e); }
 }
+// 取得並顯示自己的推薦碼
+async function loadReferralCode() {
+  const el=document.getElementById('profile-referral-code'); if(!el) return;
+  try {
+    const r=await callFn('getOrCreateReferralCode');
+    if(r?.code){ el.textContent=r.code; window._myReferralCode=r.code; }
+  } catch(e){ console.log('referralCode:',e.code||e.message); el.textContent='—'; }
+}
+window.copyReferralCode=function(){
+  const code=window._myReferralCode||document.getElementById('profile-referral-code')?.textContent||'';
+  if(!code||code==='—') return;
+  const done=()=>showToast(t('推薦碼已複製','Code copied'));
+  if(navigator.clipboard?.writeText){ navigator.clipboard.writeText(code).then(done).catch(done); }
+  else { done(); }
+};
 async function checkUnread() {
   if(!currentUser) return;
   try {
