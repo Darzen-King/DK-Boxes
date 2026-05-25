@@ -6,7 +6,14 @@ from excel_processor import ExcelProcessor
 import json
 from datetime import datetime
 
-app = Flask(__name__)
+# 獲取當前目錄
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+# 建立 Flask 應用，指定 templates 和 static 目錄
+app = Flask(__name__,
+            template_folder=os.path.join(basedir, 'templates'),
+            static_folder=os.path.join(basedir, 'static'),
+            static_url_path='/static')
 CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 
