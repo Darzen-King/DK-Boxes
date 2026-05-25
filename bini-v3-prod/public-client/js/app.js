@@ -318,6 +318,7 @@ window.handleCompleteRegister = async function() {
   const pw2   = document.getElementById('reg-password2').value;
   const msgEl = document.getElementById('profile-msg');
   if (!name)          { setMsg(msgEl,t('請輸入姓名','Enter name'),'error'); return; }
+  if (!bd)            { setMsg(msgEl,t('請選擇生日','Select birthday'),'error'); return; }
   if (!pw||pw.length<6){ setMsg(msgEl,t('密碼至少6個字元','Password 6+ chars'),'error'); return; }
   if (pw !== pw2)     { setMsg(msgEl,t('兩次密碼不一致','Passwords do not match'),'error'); return; }
   if (!regPhone)      { setMsg(msgEl,t('手機號碼遺失，請重新取得驗證碼','Phone lost, resend OTP'),'error'); return; }
