@@ -831,6 +831,90 @@ exports.scheduledLowStockAlert = onSchedule(
   }
 );
 
+// ── 每日點數到期：到期扣點 + 到期前 7 天提醒 ──────────
+// 未使用點數以批次(point_batches)的未用量為準；扣除時以會員餘額為上限夾擠，避免負值。
+exports.scheduledPointsExpiry = onSchedule(
+  { schedule: "every day 10:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => {
+    const FieldValue = admin.firestore.FieldValue;
+    const Timestamp = admin.firestore.Timestamp;
+    const now = Timestamp.now();
+    // 批次未用量（相容兩種欄位慣例：remaining 或 points-consumed）
+    const unspentOf = (b) => (b.remaining != null ? b.remaining : (b.points || 0) - (b.consumed || 0));
+
+    // ── 1. 到期扣點（含現有早已過期的舊點）──
+    const expiredSnap = await db.collection("point_batches").where("expiresAt", "<=", now).get();
+    const byUser = {};
+    expiredSnap.forEach((doc) => {
+      const b = doc.data();
+      if (b.uid && unspentOf(b) > 0) (byUser[b.uid] = byUser[b.uid] || []).push(doc.ref);
+    });
+    for (const [uid, refs] of Object.entries(byUser)) {
+      try {
+        const removed = await db.runTransaction(async (t) => {
+          const memberRef = db.collection("members").doc(uid);
+          const batchDocs = await Promise.all(refs.map((r) => t.get(r)));
+          const memberDoc = await t.get(memberRef);
+          if (!memberDoc.exists) return 0;
+          let totalExpire = 0;
+          batchDocs.forEach((bd) => {
+            if (!bd.exists) return;
+            const b = bd.data();
+            const unspent = unspentOf(b);
+            if (unspent > 0) {
+              totalExpire += unspent;
+              t.update(bd.ref, { remaining: 0, consumed: b.points || 0, expiredAt: now });
+            }
+          });
+          if (totalExpire <= 0) return 0;
+          const cur = memberDoc.data().points || 0;
+          const deduct = Math.min(cur, totalExpire); // 夾擠：不可扣成負數
+          if (deduct > 0) {
+            t.update(memberRef, { points: cur - deduct });
+            t.set(db.collection("transactions").doc(), {
+              uid, type: "expire", points: deduct, // 正值，前端以類型判斷為扣除
+              desc: "點數到期", descEn: "Points expired",
+              createdAt: FieldValue.serverTimestamp(),
+            });
+          }
+          return deduct;
+        });
+        if (removed > 0) {
+          await sendPush(uid, "⏰ 點數到期通知",
+            `您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
+        }
+      } catch (e) {
+        console.error("[pointsExpiry] 扣點失敗 uid=" + uid, e.message);
+      }
+    }
+
+    // ── 2. 到期前 7 天提醒（每筆批次只提醒一次）──
+    const in7 = Timestamp.fromMillis(now.toMillis() + 7 * 24 * 60 * 60 * 1000);
+    const soonSnap = await db.collection("point_batches")
+      .where("expiresAt", ">", now).where("expiresAt", "<=", in7).get();
+    const remind = {};
+    soonSnap.forEach((doc) => {
+      const b = doc.data();
+      if (b.uid && !b.expiryReminded && unspentOf(b) > 0) {
+        const e = (remind[b.uid] = remind[b.uid] || { total: 0, refs: [] });
+        e.total += unspentOf(b);
+        e.refs.push(doc.ref);
+      }
+    });
+    for (const [uid, info] of Object.entries(remind)) {
+      try {
+        await sendPush(uid, "⏰ 點數即將到期",
+          `您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握時間使用！`);
+        const wb = db.batch();
+        info.refs.forEach((r) => wb.update(r, { expiryReminded: true }));
+        await wb.commit();
+      } catch (e) {
+        console.error("[pointsExpiry] 提醒失敗 uid=" + uid, e.message);
+      }
+    }
+  }
+);
+
 // ── Firestore Trigger：notifications 新文件 → 自動推播 ──────────
 exports.onNotificationCreated = onDocumentCreated(
   { document: "notifications/{notifId}", region: "us-central1" },
