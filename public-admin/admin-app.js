@@ -367,6 +367,18 @@ window.generateQR=async function(){
   } catch(e){ console.error(e); alert('Error: '+e.message); }
 };
 
+// 判斷今天(台北時區)是否為該會員生日；birthday 格式 YYYY-MM-DD
+function isTodayBirthday(birthday){
+  if(!birthday || typeof birthday!=='string') return false;
+  const p=birthday.split('-');
+  if(p.length<3) return false;
+  const bMonth=p[1].padStart(2,'0'), bDay=p[2].padStart(2,'0');
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const tMonth=parts.find(x=>x.type==='month')?.value;
+  const tDay=parts.find(x=>x.type==='day')?.value;
+  return bMonth===tMonth && bDay===tDay;
+}
+
 window.confirmAmount=async function(){
   const amount=parseInt(document.getElementById('inp-confirm-amount').value);
   const tokenId=document.getElementById('qr-confirm-token').value;
@@ -381,7 +393,10 @@ window.confirmAmount=async function(){
     const m=mSnap.data();
     const newTotalSpent=(m.totalSpent||0)+amount;
     const tier=getTierBySpent(newTotalSpent);
-    const pts=calcPoints(amount,tier);
+    const basePts=calcPoints(amount,tier);
+    // 生日當天點數自動加倍
+    const isBday=isTodayBirthday(m.birthday);
+    const pts=isBday?basePts*2:basePts;
     // 計算到期日（90天後）
     const expiresAt=new Date(); expiresAt.setDate(expiresAt.getDate()+POINTS_EXPIRY_DAYS);
 
@@ -392,14 +407,17 @@ window.confirmAmount=async function(){
     // 建立點數批次記錄（含到期日）
     batch.set(doc(collection(db,'point_batches')),{uid:memberUid,points:pts,remaining:pts,amount,tier:tier.id,expiresAt:Timestamp.fromDate(expiresAt),createdAt:serverTimestamp()});
     // 交易記錄
-    batch.set(doc(collection(db,'transactions')),{uid:memberUid,type:'earn',points:pts,amount,desc:shopLang==='zh'?`消費集點 NT${amount}（${tier.name}）`:`Points earned NT${amount}（${tier.nameEn}）`,tier:tier.id,createdAt:serverTimestamp()});
+    const earnDesc=(shopLang==='zh'?`消費集點 NT${amount}（${tier.name}）`:`Points earned NT${amount}（${tier.nameEn}）`)+(isBday?(shopLang==='zh'?' 🎂生日加倍':' 🎂Birthday x2'):'');
+    batch.set(doc(collection(db,'transactions')),{uid:memberUid,type:'earn',points:pts,amount,desc:earnDesc,tier:tier.id,birthdayBonus:isBday,basePoints:basePts,createdAt:serverTimestamp()});
     // 標記 QR Token 完成
     const newTotalPts=(m.points||0)+pts;
-    batch.update(doc(db,'qr_tokens',tokenId),{status:'completed',used:true,amount,pts,memberName:m.name,totalSpent:newTotalSpent,newTotalPts,pointsAwarded:pts,completedAt:serverTimestamp()});
+    batch.update(doc(db,'qr_tokens',tokenId),{status:'completed',used:true,amount,pts,memberName:m.name,totalSpent:newTotalSpent,newTotalPts,pointsAwarded:pts,birthdayBonus:isBday,basePoints:basePts,completedAt:serverTimestamp()});
     await batch.commit();
     document.getElementById('inp-confirm-amount').value='';
     document.getElementById('qr-amount-form').style.display='none';
-    document.getElementById('qr-member-info').textContent=shopLang==='zh'?`✅ 已給予 ${m.name} ${pts} 點！（${tier.name}）`:`✅ ${m.name} earned ${pts} pts! (${tier.nameEn})`;
+    document.getElementById('qr-member-info').textContent=isBday
+      ?(shopLang==='zh'?`🎂 生日加倍！已給予 ${m.name} ${pts} 點（原 ${basePts}）`:`🎂 Birthday x2! ${m.name} earned ${pts} pts (base ${basePts})`)
+      :(shopLang==='zh'?`✅ 已給予 ${m.name} ${pts} 點！（${tier.name}）`:`✅ ${m.name} earned ${pts} pts! (${tier.nameEn})`);
     loadStats();
   } catch(e){ console.error(e); alert('Error: '+e.message); }
   finally{ btn.disabled=false; }
