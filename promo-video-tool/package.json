@@ -1,0 +1,15 @@
+{
+  "name": "bini-promo-video-tool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BINI Blooms 商品社群宣傳影片產生器（Phase 1：AI 文案）",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "script": "node src/generateScript.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.5"
+  }
+}
