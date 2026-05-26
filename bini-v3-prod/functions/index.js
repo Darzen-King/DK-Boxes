@@ -224,8 +224,8 @@ exports.confirmPoints = onCall({ region: "us-central1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }).commit();
 
-  await sendPush(memberUid, "🎉 集點成功！",
-    `您獲得了 ${rawPoints} 點！目前共有 ${newTotal} 點。`);
+  await sendPush(memberUid, "🎉 Points Earned! | 集點成功",
+    `You earned ${rawPoints} point(s)! Balance: ${newTotal}. | 您獲得 ${rawPoints} 點，目前共 ${newTotal} 點。`);
 
   // 更新本月排名
   try {
@@ -276,7 +276,7 @@ exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   await batchOps.commit();
-  await sendPush(uid, "🎁 兌換成功！", `已兌換：${reward.name_zh}`);
+  await sendPush(uid, "🎁 Redeemed! | 兌換成功", `Redeemed: ${reward.name_en || reward.name_zh} | 已兌換：${reward.name_zh}`);
   return { success: true };
 });
 
@@ -381,8 +381,8 @@ async function maybePayReferralReward(memberUid) {
     return { referrerUid: md.referredBy, paid: true };
   });
   if (result?.paid) {
-    await sendPush(result.referrerUid, "🎉 推薦獎勵到帳",
-      `您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
+    await sendPush(result.referrerUid, "🎉 Referral Reward | 推薦獎勵到帳",
+      `Your friend made their first purchase — you earned ${REWARD} points! | 您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
   }
 }
 
@@ -880,8 +880,8 @@ exports.scheduledPointsExpiry = onSchedule(
           return deduct;
         });
         if (removed > 0) {
-          await sendPush(uid, "⏰ 點數到期通知",
-            `您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
+          await sendPush(uid, "⏰ Points Expired | 點數到期",
+            `${Number.isInteger(removed) ? removed : removed.toFixed(1)} point(s) have expired. | 您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
         }
       } catch (e) {
         console.error("[pointsExpiry] 扣點失敗 uid=" + uid, e.message);
@@ -903,8 +903,8 @@ exports.scheduledPointsExpiry = onSchedule(
     });
     for (const [uid, info] of Object.entries(remind)) {
       try {
-        await sendPush(uid, "⏰ 點數即將到期",
-          `您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握時間使用！`);
+        await sendPush(uid, "⏰ Points Expiring Soon | 點數即將到期",
+          `You have ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} point(s) expiring within 7 days — use them soon! | 您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握使用！`);
         const wb = db.batch();
         info.refs.forEach((r) => wb.update(r, { expiryReminded: true }));
         await wb.commit();
@@ -918,7 +918,7 @@ exports.scheduledPointsExpiry = onSchedule(
 // ── 每日生日推播：當天生日的會員收到祝賀 + 雙倍點提醒 ──────────
 // 生日當天消費集點本來就會自動加倍（見店家端 confirmAmount），這裡只負責主動提醒。
 exports.scheduledBirthdayGreeting = onSchedule(
-  { schedule: "every day 09:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  { schedule: "every day 08:00", timeZone: "Asia/Taipei", region: "us-central1" },
   async () => {
     // 台北時區「今天」的月、日（與店家端 isTodayBirthday 判斷一致）
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -935,8 +935,8 @@ exports.scheduledBirthdayGreeting = onSchedule(
       if (p.length < 3) continue;
       if (p[1].padStart(2, "0") === tMonth && p[2].padStart(2, "0") === tDay) {
         try {
-          await sendPush(doc.id, "🎂 生日快樂！",
-            "今天是您的生日，到 BINI Blooms 消費集點享【雙倍點數】，祝您有美好的一天！");
+          await sendPush(doc.id, "🎂 Happy Birthday! | 生日快樂",
+            "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！");
           count++;
         } catch (e) {
           console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
