@@ -648,14 +648,14 @@ exports.createOrder = onCall({ region: "us-central1" }, async (request) => {
     type: "new_order",
     orderId,
     totalAmount: totalWithShipping,
-    message: `新訂單 ${orderId}，NT$${totalWithShipping}（含運費NT$${shippingFee}），取貨門市：${cvs.storeName}`,
+    message: `New order ${orderId} · NT$${totalWithShipping} (incl. shipping NT$${shippingFee}) · Pickup: ${cvs.storeName} | 新訂單 ${orderId}，NT$${totalWithShipping}（含運費 NT$${shippingFee}），取貨門市：${cvs.storeName}`,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     read: false,
   });
 
   // 推播通知店家端（新訂單）
   await sendPushToAdmins(
-    "🛍️ 新訂單！ New Order!",
+    "🛍️ New Order! | 新訂單",
     `NT$${totalWithShipping}｜${cvs.storeName}｜${cvs.name}`,
     { type: "new_order", orderId }
   );
@@ -819,10 +819,10 @@ exports.scheduledLowStockAlert = onSchedule(
       .where("stock","<=",5)
       .get();
     if (snap.size === 0) return;
-    const items = snap.docs.map(d => `${d.data().name}（庫存：${d.data().stock}）`).join("\n");
+    const items = snap.docs.map(d => `${d.data().name} (${d.data().stock})`).join("\n");
     await db.collection("admin_notifications").add({
       type: "low_stock",
-      message: `以下商品庫存偏低：\n${items}`,
+      message: `Low stock items | 低庫存商品：\n${items}`,
       count: snap.size,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       read: false,
@@ -1012,8 +1012,8 @@ exports.onChatMessageCreated = onDocumentCreated(
     try {
       // 取得聊天室資訊
       const chatDoc = await db.collection("chats").doc(chatId).get();
-      const memberName = chatDoc.data()?.memberName || "會員";
-      const msgText = data.text || (data.imageUrl ? "[圖片]" : "新訊息");
+      const memberName = chatDoc.data()?.memberName || "Member";
+      const msgText = data.text || (data.imageUrl ? "[Image | 圖片]" : "New message | 新訊息");
 
       // 讀取所有 admin tokens
       const adminSnap = await db.collection("admin_tokens").get();
