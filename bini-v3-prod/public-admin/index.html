@@ -347,6 +347,12 @@ input:focus,textarea:focus{border-color:var(--pink)}
           <div><label>Emoji</label><input type="text" id="rw-emoji" placeholder="🛍️" maxlength="2"></div>
           <div><label><span data-zh="需要點數" data-en="Points Required">需要點數</span></label><input type="number" id="rw-pts" placeholder="100" min="1" inputmode="numeric"></div>
         </div>
+        <label><span data-zh="獎品圖片（選填，最大10MB）" data-en="Reward Image (optional, max 10MB)">獎品圖片（選填，最大10MB）</span></label>
+        <div id="rw-img-preview" style="margin-bottom:8px"></div>
+        <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;color:var(--brown);font-weight:600;font-size:13px;margin-bottom:11px;background:var(--pale);border-radius:8px;padding:7px 13px">
+          <span data-zh="📷 拍照 / 選擇圖片" data-en="📷 Take Photo / Choose">📷 拍照 / 選擇圖片</span>
+          <input type="file" id="rw-img-input" accept="image/*" style="display:none" onchange="previewRewardImg(this)">
+        </label>
         <button class="btn btn-primary" onclick="addReward()">新增獎品</button>
       </div>
     </div>

@@ -657,18 +657,39 @@ async function loadRewards(){
     const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()})); items.sort((a,b)=>a.pts-b.pts);
     items.forEach(r=>{
       const row=document.createElement('div'); row.className='reward-row';
-      row.innerHTML=`<div style="font-size:26px">${r.emoji||'🎁'}</div>
+      const thumb=r.imageUrl
+        ? `<img src="${esc(r.imageUrl)}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0">`
+        : `<div style="font-size:26px">${r.emoji||'🎁'}</div>`;
+      row.innerHTML=`${thumb}
         <div class="reward-row-info"><div class="reward-row-name">${esc(r.name_zh||r.name)}</div><div class="reward-row-en">${esc(r.name_en||'')}</div><div class="reward-row-pts">${r.pts.toLocaleString()} ${shopLang==='zh'?'點':'pts'}</div></div>
         <button class="btn-sm btn-danger" onclick="deleteReward('${r.id}')">${shopLang==='zh'?'刪除':'Delete'}</button>`;
       wrap.appendChild(row);
     });
   } catch(e){ console.error(e); }
 }
+let rwImgFile=null;
+window.previewRewardImg=function(input){
+  const f=input.files[0];
+  if(f && f.size>10*1024*1024){ alert(shopLang==='zh'?'圖片不能超過 10MB':'Image must be under 10MB'); input.value=''; return; }
+  rwImgFile=f;
+  const preview=document.getElementById('rw-img-preview');
+  if(rwImgFile){ const url=URL.createObjectURL(rwImgFile); preview.innerHTML=`<img src="${url}" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover">`; }
+  else preview.innerHTML='';
+};
 window.addReward=async function(){
   const nz=document.getElementById('rw-name-zh').value.trim(),ne=document.getElementById('rw-name-en').value.trim(),em=document.getElementById('rw-emoji').value.trim()||'🎁',pts=parseInt(document.getElementById('rw-pts').value);
   if(!nz||!pts||pts<1){ alert('請填寫完整資訊'); return; }
-  try{ await addDoc(collection(db,'rewards'),{name_zh:nz,name_en:ne||nz,emoji:em,pts,createdAt:serverTimestamp()}); ['rw-name-zh','rw-name-en','rw-emoji','rw-pts'].forEach(id=>document.getElementById(id).value=''); await loadRewards(); alert('✅ 獎品已新增！'); }
+  const btn=document.querySelector('#tab-rewards-page .btn-primary'); if(btn){ btn.disabled=true; btn.textContent=shopLang==='zh'?'上傳中…':'Uploading…'; }
+  try{
+    let imageUrl='';
+    if(rwImgFile){ const sRef=ref(storage,`rewards/${Date.now()}_${rwImgFile.name}`); await uploadBytes(sRef,rwImgFile); imageUrl=await getDownloadURL(sRef); }
+    await addDoc(collection(db,'rewards'),{name_zh:nz,name_en:ne||nz,emoji:em,pts,imageUrl,createdAt:serverTimestamp()});
+    ['rw-name-zh','rw-name-en','rw-emoji','rw-pts'].forEach(id=>document.getElementById(id).value='');
+    rwImgFile=null; document.getElementById('rw-img-preview').innerHTML=''; document.getElementById('rw-img-input').value='';
+    await loadRewards(); alert('✅ 獎品已新增！');
+  }
   catch(e){ alert('Error: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=shopLang==='zh'?'新增獎品':'Add Reward'; } }
 };
 window.deleteReward=async function(id){ if(!confirm(shopLang==='zh'?'確定刪除？':'Delete this reward?'))return; try{await deleteDoc(doc(db,'rewards',id));loadRewards();}catch(e){alert('Error:'+e.message);} };
 

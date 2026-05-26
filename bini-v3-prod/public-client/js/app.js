@@ -955,7 +955,10 @@ async function loadRedeem() {
     list.innerHTML='';
     rewards.forEach(r=>{
       const ok=pts>=r.pts; const item=document.createElement('div'); item.className='reward-item';
-      item.innerHTML=`<div class="reward-emoji">${r.emoji||'🎁'}</div>
+      const media = r.imageUrl
+        ? `<img class="reward-photo" src="${r.imageUrl}" alt="" onclick="openImageViewer('${(r.imageUrl||'').replace(/'/g,"\\'")}')">`
+        : `<div class="reward-emoji">${r.emoji||'🎁'}</div>`;
+      item.innerHTML=`${media}
         <div class="reward-info"><div class="reward-name">${r.name_zh||r.name}</div><div class="reward-name-en">${r.name_en||''}</div><div class="reward-pts">${r.pts.toLocaleString()} ${t('點','pts')}</div></div>
         <button class="btn-redeem" ${!ok?'disabled':''} onclick="startRewardRedeem('${r.id}','${(r.name_zh||r.name).replace(/'/g,"\\'")}','${(r.name_en||r.name).replace(/'/g,"\\'")}',${r.pts})">
           ${ok?t('兌換','Redeem'):t('點數不足','Not enough')}</button>`;
@@ -963,6 +966,15 @@ async function loadRedeem() {
     });
   } catch(e) { console.error(e); }
 }
+// 圖片檢視（點獎品圖放大看品相）
+window.openImageViewer=function(url){
+  if(!url) return;
+  const v=document.getElementById('img-viewer'), i=document.getElementById('img-viewer-img');
+  if(v&&i){ i.src=url; v.style.display='flex'; }
+};
+window.closeImageViewer=function(){
+  const v=document.getElementById('img-viewer'); if(v){ v.style.display='none'; document.getElementById('img-viewer-img').src=''; }
+};
 window.updateDeductPreview=function(){ document.getElementById('deduct-preview').textContent=(parseInt(document.getElementById('deduct-input').value)||0).toLocaleString(); };
 window.startDeduct=function(){
   const pts=parseInt(document.getElementById('deduct-input').value)||0;
