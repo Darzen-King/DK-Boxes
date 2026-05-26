@@ -187,7 +187,7 @@ function showApp(){
   applyAdminLang();
   loadMemberCount(); loadStats(); startInbox(); loadRewards(); loadAnnouncements();
   startConnectionMonitor();
-  if(window._deferredInstall) document.getElementById('btn-shop-install').style.display='flex';
+  if(window._deferredInstall || (isIOSDevice() && !isStandalonePWA())) document.getElementById('btn-shop-install').style.display='flex';
   switchTab('qr');
   // 登入後同步 shop nav 語言（300ms 等待 admin-shop.js inject 完成）
   setTimeout(() => { if (typeof syncShopNavLang === 'function') syncShopNavLang(); }, 500);
@@ -325,11 +325,34 @@ window.switchTab=function(tab){
 };
 
 // ── PWA ──
+function isIOSDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+}
+function isIOSSafari(){
+  if(!isIOSDevice()) return false;
+  const ua=navigator.userAgent;
+  return /Safari/i.test(ua) && !/(CriOS|FxiOS|EdgiOS|OPiOS|GSA|Line|FBA[NV]|FBIOS|Instagram|MicroMessenger|DuckDuckGo|YaBrowser)/i.test(ua);
+}
+function isStandalonePWA(){
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
 window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); window._deferredInstall=e; if(document.getElementById('screen-app').classList.contains('active')) document.getElementById('btn-shop-install').style.display='flex'; });
 window.handleShopInstall=async function(){
-  if(window.matchMedia('(display-mode: standalone)').matches){alert('已在主畫面！');return;}
+  if(isStandalonePWA()){ alert(shopLang==='zh'?'已在主畫面！':'Already on home screen!'); return; }
   if(window._deferredInstall){ if(!confirm(shopLang==='zh'?'加入 BINI Backend 到主畫面？':'Add BINI Backend to Home Screen?'))return; window._deferredInstall.prompt(); await window._deferredInstall.userChoice; window._deferredInstall=null; }
-  else alert('iOS: Safari 下方 □↑ → 加入主畫面 → 名稱「BINI Backend」');
+  else if(isIOSDevice() && !isIOSSafari()){
+    let copied=false;
+    try{ await navigator.clipboard?.writeText(location.href.split('#')[0]); copied=true; }catch(e){}
+    alert(shopLang==='zh'
+      ? '⚠️ 請改用「Safari」開啟本頁\n\niOS 只有 Safari 能「加入主畫面」並啟用推播通知，目前的瀏覽器（如 Chrome）做不到。\n\n'+(copied?'已複製網址，請：\n1. 開啟 Safari 貼上網址前往\n':'1. 用 Safari 開啟本頁網址\n')+'2. 點畫面下方「分享」按鈕 □↑\n3. 往下滑，選「加入主畫面」'
+      : '⚠️ Please open this page in Safari\n\nOn iOS, only Safari can Add to Home Screen & enable push. Other browsers (e.g. Chrome) cannot.\n\n'+(copied?'The URL has been copied:\n1. Open Safari and paste the URL\n':'1. Open this page in Safari\n')+'2. Tap Share □↑\n3. Choose "Add to Home Screen"');
+  }
+  else if(isIOSDevice()){
+    alert(shopLang==='zh'
+      ? 'iOS 加入主畫面步驟：\n1. 點畫面下方「分享」按鈕 □↑\n2. 往下滑，選「加入主畫面」\n3. 確認名稱「BINI Backend」後點「新增」'
+      : 'Add to Home Screen (iOS):\n1. Tap Share □↑\n2. Scroll and tap "Add to Home Screen"\n3. Confirm "BINI Backend" and tap Add');
+  }
+  else alert(shopLang==='zh'?'請從瀏覽器選單選擇「安裝」或「加入主畫面」':'Use your browser menu: Install / Add to Home Screen');
 };
 
 // ── 會員人數 ──

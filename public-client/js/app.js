@@ -129,16 +129,41 @@ let pendingDeductPts=0, pendingReward=null, deferredInstall=null;
 let regPhone='', regName='', regBirthday='', regPassword='';
 
 // ── PWA ──
+function isIOSDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+}
+function isIOSSafari(){
+  if(!isIOSDevice()) return false;
+  const ua=navigator.userAgent;
+  return /Safari/i.test(ua) && !/(CriOS|FxiOS|EdgiOS|OPiOS|GSA|Line|FBA[NV]|FBIOS|Instagram|MicroMessenger|DuckDuckGo|YaBrowser)/i.test(ua);
+}
+function isStandalonePWA(){
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
 window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); deferredInstall=e; const btn=document.getElementById('btn-install'); if(btn) btn.style.display='flex'; });
 window.addEventListener('appinstalled', ()=>{ deferredInstall=null; showToast(t('已加入主畫面！','Added!')); const btn=document.getElementById('btn-install'); if(btn) btn.style.display='none'; });
+// iOS 不會觸發 beforeinstallprompt，需主動顯示按鈕，點擊時再給正確指引
+if(isIOSDevice() && !isStandalonePWA()){
+  const btn=document.getElementById('btn-install'); if(btn) btn.style.display='flex';
+}
 window.handleInstall = async function() {
-  if(window.matchMedia('(display-mode: standalone)').matches){ showToast(t('已在主畫面！','Already on home screen!')); return; }
+  if(isStandalonePWA()){ showToast(t('已在主畫面！','Already on home screen!')); return; }
   if(deferredInstall){
     if(!confirm(t('BINI Blooms 將加入手機主畫面，方便下次直接開啟。\n確認加入？','Add BINI Blooms to your home screen?\nConfirm?'))) return;
     deferredInstall.prompt(); const{outcome}=await deferredInstall.userChoice;
     if(outcome==='accepted') showToast(t('成功加入主畫面！','Added!')); deferredInstall=null;
+  } else if(isIOSDevice() && !isIOSSafari()){
+    let copied=false;
+    try{ await navigator.clipboard?.writeText(location.href.split('#')[0]); copied=true; }catch(e){}
+    alert(t(
+      '⚠️ 請改用「Safari」開啟本頁\n\niOS 只有 Safari 能「加入主畫面」並啟用推播通知，目前的瀏覽器（如 Chrome）做不到。\n\n'+(copied?'已複製網址，請：\n1. 開啟 Safari 貼上網址前往\n':'1. 用 Safari 開啟本頁網址\n')+'2. 點畫面下方「分享」按鈕 □↑\n3. 往下滑，選「加入主畫面」',
+      '⚠️ Please open this page in Safari\n\nOn iOS, only Safari can Add to Home Screen & enable push. Other browsers (e.g. Chrome) cannot.\n\n'+(copied?'The URL has been copied:\n1. Open Safari and paste the URL\n':'1. Open this page in Safari\n')+'2. Tap Share □↑\n3. Choose "Add to Home Screen"'));
+  } else if(isIOSDevice()){
+    alert(t(
+      'iOS 加入主畫面步驟：\n1. 點畫面下方「分享」按鈕 □↑\n2. 往下滑，選「加入主畫面」\n3. 確認名稱「BINI Blooms」後點「新增」',
+      'Add to Home Screen (iOS):\n1. Tap Share □↑ at the bottom\n2. Scroll and tap "Add to Home Screen"\n3. Confirm "BINI Blooms" and tap Add'));
   } else {
-    alert(t('iOS 步驟：\n1. 點 Safari 下方「分享」按鈕 □↑\n2. 選「加入主畫面」\n3. 確認名稱「BINI Blooms」後點新增','iOS: Tap Share □↑ → Add to Home Screen → confirm "BINI Blooms"'));
+    alert(t('請從瀏覽器選單選擇「安裝」或「加入主畫面」','Use your browser menu: Install / Add to Home Screen'));
   }
 };
 
