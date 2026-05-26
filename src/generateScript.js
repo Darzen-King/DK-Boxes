@@ -75,14 +75,31 @@ function loadImageBlock(filePath) {
   return { type: "image", source: { type: "base64", media_type: mediaType, data } };
 }
 
-function buildPrompt(opts) {
+function loadStyleProfile() {
+  const p = path.resolve("style-profile.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    console.warn("⚠️ style-profile.json 解析失敗，將忽略風格檔。");
+    return null;
+  }
+}
+
+function buildPrompt(opts, style) {
   const info = [
     opts.name ? `商品名稱：${opts.name}` : null,
     opts.price ? `價格：${opts.price}` : null,
     opts.notes ? `賣點／補充：${opts.notes}` : null,
   ].filter(Boolean).join("\n") || "（店家未提供文字資訊，請只依照片判斷）";
 
-  return `你是 BINI Blooms（一家主打菲律賓客群的花店/禮盒品牌）的社群行銷文案專家。
+  const styleBlock = style ? `
+
+【務必嚴格模仿以下「說話風格檔」——這是從參考影片歸納出的口吻與習慣用語，新腳本要聽起來像同一個人講的】
+${JSON.stringify(style, null, 2)}
+` : "";
+
+  return `你是 BINI Blooms（一家主打菲律賓客群的花店/禮盒品牌）的社群行銷文案專家。${styleBlock}
 請依照附上的商品照片與下列資訊，產出一支約 ${opts.seconds} 秒的「直式短影音」宣傳腳本，用於 Facebook Reels 與 TikTok，目標是帶動網路銷售。
 
 商品資訊：
@@ -142,14 +159,15 @@ async function main() {
 
   const client = new Anthropic();
   const imageBlocks = images.map(loadImageBlock);
+  const style = loadStyleProfile();
 
-  console.log(`🧠 使用 ${MODEL} 分析 ${images.length} 張照片…`);
+  console.log(`🧠 使用 ${MODEL} 分析 ${images.length} 張照片…${style ? "（已套用風格檔）" : ""}`);
   const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 2000,
     messages: [{
       role: "user",
-      content: [...imageBlocks, { type: "text", text: buildPrompt(opts) }],
+      content: [...imageBlocks, { type: "text", text: buildPrompt(opts, style) }],
     }],
   });
 
