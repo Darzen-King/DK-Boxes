@@ -915,6 +915,38 @@ exports.scheduledPointsExpiry = onSchedule(
   }
 );
 
+// ── 每日生日推播：當天生日的會員收到祝賀 + 雙倍點提醒 ──────────
+// 生日當天消費集點本來就會自動加倍（見店家端 confirmAmount），這裡只負責主動提醒。
+exports.scheduledBirthdayGreeting = onSchedule(
+  { schedule: "every day 09:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => {
+    // 台北時區「今天」的月、日（與店家端 isTodayBirthday 判斷一致）
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const tMonth = parts.find(x => x.type === "month")?.value;
+    const tDay = parts.find(x => x.type === "day")?.value;
+    if (!tMonth || !tDay) return;
+
+    const snap = await db.collection("members").get();
+    let count = 0;
+    for (const doc of snap.docs) {
+      const bday = doc.data().birthday;
+      if (!bday || typeof bday !== "string") continue;
+      const p = bday.split("-");
+      if (p.length < 3) continue;
+      if (p[1].padStart(2, "0") === tMonth && p[2].padStart(2, "0") === tDay) {
+        try {
+          await sendPush(doc.id, "🎂 生日快樂！",
+            "今天是您的生日，到 BINI Blooms 消費集點享【雙倍點數】，祝您有美好的一天！");
+          count++;
+        } catch (e) {
+          console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
+        }
+      }
+    }
+    console.log(`[birthday] 生日推播完成，共 ${count} 位`);
+  }
+);
+
 // ── Firestore Trigger：notifications 新文件 → 自動推播 ──────────
 exports.onNotificationCreated = onDocumentCreated(
   { document: "notifications/{notifId}", region: "us-central1" },
