@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BINI Backend">
+<meta name="theme-color" content="#3d0c1a">
+<title>BINI Backend</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/shop-icon.png">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--dark:#3d0c1a;--brown:#6B2737;--pink:#C8717A;--pale:#FCE8ED;--bg:#fdf5f7;--border:#EACDD2}
+html,body{height:100%!important;max-height:100vh;overflow:hidden!important}
+body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;background:var(--bg);color:var(--dark);-webkit-font-smoothing:antialiased}
+.screen{display:none}
+.screen.active{display:flex;flex-direction:column;height:100dvh;height:100vh;max-height:100vh;overflow:hidden}
+/* 登入 */
+#screen-login{align-items:center;justify-content:center}
+.login-wrap{width:100%;max-width:380px;text-align:center;padding:32px 24px}
+.login-logo{width:160px;height:160px;object-fit:contain;margin-bottom:14px;background:#fff;border-radius:18px;padding:14px;box-shadow:0 4px 20px rgba(61,12,26,.15)}
+.brand-title{font-size:31px;font-weight:800;color:var(--dark);margin-bottom:4px}
+.brand-sub{font-size:18px;color:var(--brown);margin-bottom:22px}
+.card{background:#fff;border-radius:18px;padding:22px;margin-bottom:12px;border:1px solid var(--border);box-shadow:0 2px 10px rgba(61,12,26,.06)}
+.card-title{font-size:17px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
+label{display:block;font-size:18px;color:var(--brown);margin-bottom:5px;font-weight:500}
+input,textarea{width:100%;padding:11px 13px;background:#fff;border:1.5px solid var(--border);border-radius:12px;color:var(--dark);font-size:21px;outline:none;margin-bottom:11px;transition:border-color .2s;font-family:inherit}
+input:focus,textarea:focus{border-color:var(--pink)}
+.btn{width:100%;padding:13px;border:none;border-radius:12px;font-size:21px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:8px}
+.btn:active{opacity:.85}
+.btn-primary{background:var(--dark);color:#fff}
+.btn-outline{background:transparent;color:var(--dark);border:1.5px solid var(--dark)}
+.btn-sm{padding:7px 12px;font-size:17px;border:none;border-radius:8px;cursor:pointer;font-weight:600;width:auto}
+.btn-danger{background:var(--pale);color:#9b1c2e}
+.btn-warning{background:#FFF3CD;color:#856404}
+.login-msg{font-size:18px;text-align:center;margin-top:6px;min-height:18px}
+.login-msg.error{color:#c0392b}
+.login-msg.success{color:#27ae60}
+.forgot-btn{background:none;border:none;color:var(--pink);font-size:18px;cursor:pointer;text-decoration:underline;width:100%;margin-top:2px}
+/* 主介面 */
+#screen-app{flex-direction:column;max-width:430px;margin:0 auto;width:100%;height:100dvh!important;height:100vh!important;overflow:hidden!important;max-height:100vh}
+#screen-app.active{display:flex}
+
+.top-row{display:flex;align-items:center;justify-content:space-between;padding-bottom:3px}
+.top-brand{display:flex;align-items:center;gap:8px}
+.top-logo{width:48px;height:48px;border-radius:10px;object-fit:contain;background:#fff;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.22)}
+.top-name{font-size:21px;font-weight:800;color:#fff;letter-spacing:.3px}
+.top-actions{display:flex;align-items:center;gap:6px}
+.lang-sw{display:flex;background:rgba(255,255,255,.15);border-radius:10px;padding:2px}
+.lang-sw button{padding:4px 9px;border:none;border-radius:8px;font-size:17px;font-weight:600;cursor:pointer;transition:background .25s ease,color .25s ease}
+.lang-sw .act{background:rgba(255,255,255,.9);color:var(--dark)}
+.lang-sw .inact{background:transparent;color:rgba(255,255,255,.7)}
+.btn-logout{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:5px 11px;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s ease,transform .1s ease}
+.btn-logout svg{width:16px;height:16px}
+.btn-logout:active{transform:scale(.94);background:rgba(255,255,255,.28)}
+.tab-row{display:flex;overflow-x:auto;scrollbar-width:none}
+.tab-row::-webkit-scrollbar{display:none}
+.tab-btn{flex-shrink:0;padding:9px 9px;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.5);font-size:16px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tab-btn.active{color:#fff;border-bottom-color:var(--pink)}
+.tab-badge{background:#e05070;color:#fff;font-size:13px;font-weight:700;padding:1px 5px;border-radius:10px;display:none;margin-left:3px}
+.tab-badge.show{display:inline-block}
+.tab-page{display:none;padding:14px;overflow-y:auto}
+.tab-page.active{display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto}
+/* 底部導覽列 */
+.admin-bnav{width:100%;background:#fff;border-top:1px solid var(--border);display:flex;padding:0;flex-shrink:0;height:0;overflow-x:auto;overflow-y:hidden;transition:none;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.admin-bnav.visible{height:auto;padding:6px 0 max(8px,env(safe-area-inset-bottom))}
+.admin-bnav-btn{flex-shrink:0;min-width:60px;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;color:#C0A0A8;font-size:13px;font-weight:600;padding:2px 4px;transition:color .15s;position:relative}
+.admin-bnav-btn.active{color:var(--dark)}
+.admin-bnav-btn svg{transition:stroke .15s}
+.admin-bnav::-webkit-scrollbar{display:none}
+.admin-bnav-btn.active svg{stroke:var(--dark)}
+.admin-badge{background:#e05070;color:#fff;font-size:13px;font-weight:700;padding:1px 4px;border-radius:10px;display:none;margin-left:2px;vertical-align:middle}
+.admin-badge.show{display:inline-block}
+/* top-bar 移除 tab 後的 padding */
+.top-bar{background:var(--dark);padding:0;flex-shrink:0}
+/* bubble 修正：橫向顯示 */
+.bubble{display:block;width:fit-content;max-width:100%;padding:9px 13px;border-radius:16px;font-size:18px;line-height:1.5;overflow-wrap:break-word;word-break:break-word;white-space:pre-wrap;hyphens:none}
+
+.chat-input-row{display:flex;align-items:flex-end;gap:7px;padding:11px 13px;padding-bottom:max(16px,env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--border);flex-shrink:0}
+/* msg-row 修正 */
+.msg-row{display:flex;align-items:flex-end;gap:7px}
+.msg-row>div{min-width:0;max-width:80%;display:flex;flex-direction:column;align-items:flex-start}
+.msg-row.mine{flex-direction:row-reverse}
+.msg-row.mine>div{align-items:flex-end}
+/* 統計 */
+.stat-hero{border-radius:0;margin-bottom:12px;display:flex;align-items:flex-start}
+.stat-hero-num{font-size:56px;font-weight:800;color:#fff;line-height:1}
+.stat-hero-label{font-size:17px;color:rgba(255,255,255,.7);margin-bottom:3px}
+.stat-hero-unit{font-size:17px;color:var(--pink);margin-top:2px}
+.stats-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.stat-box{background:#fff;border-radius:12px;padding:12px;text-align:center;border:1px solid var(--border)}
+.stat-lbl{font-size:15px;color:#888;margin-bottom:3px}
+.stat-val{font-size:31px;font-weight:800;color:var(--dark)}
+.install-btn{display:none;align-items:center;justify-content:center;gap:7px;background:var(--dark);color:#fff;border:none;border-radius:12px;padding:11px;font-size:18px;font-weight:600;cursor:pointer;width:100%;margin-bottom:12px}
+.status-bar{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;background:#E8F5E9;border-radius:10px;border:1px solid #C8E6C9;margin-bottom:12px;font-size:17px;color:#2E7D32}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#4CAF50;animation:pulse 2s ease-in-out infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* QR */
+.qr-section{display:none}
+.qr-section.visible{display:block}
+.cd-box{display:flex;align-items:center;justify-content:center;gap:10px;padding:11px;background:var(--pale);border-radius:12px;margin-bottom:12px}
+.cd-num{font-size:31px;font-weight:800;color:var(--brown)}
+.cd-num.urgent{color:#c0392b}
+.qr-white{background:#fff;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;border:1px solid var(--border)}
+.qr-member-info{font-size:20px;font-weight:600;color:var(--brown);margin-top:10px;min-height:20px;text-align:center}
+.qr-amount-form{background:var(--pale);border-radius:12px;padding:14px;margin-top:12px;border:1px solid var(--border)}
+/* 公告 */
+.form-card{background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border);margin-bottom:12px}
+.ann-card{background:#fff;border-radius:12px;padding:13px;border:1px solid var(--border);border-left:4px solid var(--pink);margin-bottom:10px}
+.ann-date{font-size:15px;color:#aaa;margin-bottom:3px}
+.ann-title-text{font-size:20px;font-weight:700;color:var(--dark);margin-bottom:5px}
+.ann-body-text{font-size:18px;color:#555;white-space:pre-wrap;line-height:1.6}
+.ann-img{width:100%;border-radius:8px;margin-top:7px;max-height:140px;object-fit:cover;cursor:pointer}
+/* 獎品 */
+.reward-row{background:#fff;border-radius:11px;padding:12px;border:1px solid var(--border);display:flex;align-items:center;gap:11px;margin-bottom:9px}
+.reward-row-info{flex:1}
+.reward-row-name{font-size:18px;font-weight:600;color:var(--dark)}
+.reward-row-en{font-size:15px;color:#888;margin-top:2px}
+.reward-row-pts{font-size:17px;color:var(--pink);margin-top:2px;font-weight:600}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* 資料分析 */
+.period-selector{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.period-btn{flex:1 1 28%;min-width:60px;padding:9px 6px;border:1.5px solid var(--border);background:#fff;color:#777;border-radius:9px;font-size:15px;font-weight:600;cursor:pointer;transition:all .15s}
+.period-btn.active{background:var(--brown);color:#fff;border-color:var(--brown)}
+.analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.analytics-card{background:#fff;border-radius:12px;padding:14px;border:1px solid var(--border);text-align:center}
+.analytics-label{font-size:17px;color:#888;margin-bottom:4px}
+.analytics-val{font-size:31px;font-weight:800;color:var(--dark)}
+.analytics-section-title{font-size:17px;font-weight:700;color:var(--brown);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 10px}
+.analytics-table{width:100%;border-collapse:collapse;font-size:18px;background:#fff;border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+.analytics-table th{background:var(--pale);color:var(--brown);padding:10px 12px;text-align:left;font-weight:700;font-size:17px}
+.analytics-table td{padding:9px 12px;border-top:1px solid var(--border)}
+/* 收件匣 */
+.inbox-list{display:flex;flex-direction:column;gap:9px}
+.inbox-item{background:#fff;border-radius:12px;padding:12px 14px;cursor:pointer;border:1px solid var(--border);transition:border-color .2s}
+.inbox-item:hover{border-color:var(--pink)}
+.inbox-item.unread{border-left:3px solid var(--pink)}
+.inbox-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.inbox-name{font-size:20px;font-weight:600;color:var(--dark)}
+.inbox-time{font-size:15px;color:#888}
+.inbox-preview{font-size:17px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inbox-act{background:#f3f3f3;color:#777;border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer;white-space:nowrap}
+.inbox-act:hover{border-color:var(--pink);color:var(--pink)}
+.empty-hint{text-align:center;font-size:18px;color:#aaa;padding:28px 0}
+/* 對話視窗 */
+#chat-view{display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;height:100dvh;background:var(--bg);z-index:400;flex-direction:column}
+#chat-view.open{display:flex}
+.chat-top{background:var(--dark);padding:max(44px,env(safe-area-inset-top,44px)) 14px 13px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.back-btn{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;display:flex;align-items:center;gap:3px;font-size:18px;font-weight:600;padding:3px}
+.chat-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:7px}
+.msg-av{width:28px;height:28px;border-radius:50%;background:var(--pale);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:var(--brown);flex-shrink:0;border:1px solid var(--border)}
+.bubble{display:block;width:fit-content;max-width:100%;padding:9px 13px;border-radius:16px;font-size:18px;line-height:1.5;overflow-wrap:break-word;word-break:break-word;white-space:pre-wrap;hyphens:none}
+.bubble.theirs{background:#fff;color:var(--dark);border-bottom-left-radius:3px;border:1px solid var(--border)}
+.bubble.mine{background:var(--dark);color:#fff;border-bottom-right-radius:3px}
+.msg-t{font-size:14px;color:#bbb;margin-top:2px}
+.msg-row.mine .msg-t{text-align:right}
+.date-sep{text-align:center;font-size:14px;color:#bbb;padding:6px 0}
+.chat-input-row{display:flex;align-items:flex-end;gap:7px;padding:11px 13px 18px;background:#fff;border-top:1px solid var(--border);flex-shrink:0}
+.chat-ta{flex:1;resize:none;background:var(--bg);border:1.5px solid var(--border);border-radius:18px;padding:9px 13px;color:var(--dark);font-size:20px;line-height:1.4;max-height:90px;outline:none;font-family:inherit}
+.chat-ta:focus{border-color:var(--pink)}
+.send-btn{width:38px;height:38px;border-radius:50%;background:var(--dark);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.send-btn:active{opacity:.8}
+.send-btn:disabled{background:#e0c5c9}
+.img-lbl{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--pale);border-radius:50%;cursor:pointer;flex-shrink:0;color:var(--brown)}
+.chat-img{max-width:160px;border-radius:10px;cursor:pointer;display:block}
+/* Toast */
+#admin-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(61,12,26,.9);color:#fff;font-size:18px;padding:9px 18px;border-radius:18px;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;z-index:300;white-space:nowrap}
+#admin-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- 登入 -->
+<div id="screen-login" class="screen active">
+  <div class="login-wrap">
+    <img src="/logo.png" alt="BINI Blooms" class="login-logo">
+    <div class="brand-title">BINI Blooms</div>
+    <div class="brand-sub"><span data-zh="店家管理後台" data-en="Admin Dashboard">店家管理後台</span></div>
+    <div class="card">
+      <div class="card-title"><span data-zh="管理員登入" data-en="Admin Login">管理員登入</span></div>
+      <label>Email</label>
+      <input type="email" id="admin-email" placeholder="biniblooms250808@gmail.com" onkeydown="if(event.key==='Enter')document.getElementById('admin-password').focus()">
+      <label>密碼</label>
+      <input type="password" id="admin-password" placeholder="輸入密碼" data-ph-zh="輸入密碼" data-ph-en="Enter password" onkeydown="if(event.key==='Enter')handleAdminSignIn()">
+      <button class="btn btn-primary" onclick="handleAdminSignIn()">登入</button>
+      <button class="forgot-btn" onclick="handleForgotPw()"><span data-zh="忘記密碼？寄送重設郵件" data-en="Forgot password? Send reset email">忘記密碼？寄送重設郵件</span></button>
+      <p id="login-msg" class="login-msg"></p>
+    </div>
+  </div>
+</div>
+
+<!-- 主程式 -->
+<div id="screen-app" class="screen">
+  <div class="top-bar" style="padding:0;overflow:hidden">
+    <div class="top-row" style="padding:44px 14px 12px">
+      <div class="top-brand">
+        <img src="/logo.png" alt="BINI" class="top-logo">
+        <div>
+          <div class="top-name">BINI Backend</div>
+          <div style="font-size:10px;color:rgba(255,255,255,.55)" id="admin-email-display"></div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="lang-sw">
+          <button id="slbtn-zh" class="act" onclick="shopSetLang('zh')">中</button>
+          <button id="slbtn-en" class="inact" onclick="shopSetLang('en')">EN</button>
+        </div>
+        <button class="btn-logout" onclick="handleAdminLogout()">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M18 15l3-3m0 0l-3-3m3 3H9"/></svg>
+          <span data-zh="登出" data-en="Sign Out">登出</span>
+        </button>
+      </div>
+    </div>
+    <!-- Banner 圖片 -->
+    <div style="width:100%;overflow:hidden;line-height:0;margin:0;padding:0">
+      <img src="/banner.png" alt="BINI Blooms" style="width:100%;display:block;object-fit:cover;margin:0;padding:0;vertical-align:top" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <!-- QR 集點 -->
+  <div class="tab-page active" id="tab-qr-page">
+    <div style="margin-top:0">
+      <div class="stat-hero" style="background:linear-gradient(150deg,#4a1628 0%,#7a3448 60%,#9a4a60 100%);flex-direction:column;gap:0;padding:20px;margin-top:0">
+        <!-- 標題 -->
+        <div style="font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;color:rgba(255,255,255,.85);width:100%"><span data-zh="今日概況" data-en="Today's Overview">今日概況</span></div>
+        <!-- 兩欄 -->
+        <div style="display:flex;align-items:stretch;gap:12px;width:100%">
+          <!-- 左：會員總數 -->
+          <div style="flex:1">
+            <div style="font-size:14px;color:rgba(255,255,255,.75);margin-bottom:6px"><span data-zh="目前註冊會員" data-en="Members">目前註冊會員</span></div>
+            <div id="member-count" style="font-size:52px;font-weight:800;color:#fff;line-height:1;letter-spacing:-1px">—</div>
+            <div style="font-size:15px;color:rgba(255,255,255,.65);margin-top:2px"><span data-zh="人" data-en="users">人</span></div>
+            <div id="admin-status-inline" style="font-size:13px;color:rgba(255,255,255,.75);margin-top:8px;display:flex;align-items:center;gap:6px"><span id="admin-status-dot" style="width:8px;height:8px;border-radius:50%;background:#4caf50;display:inline-block;flex-shrink:0"></span><span data-zh="Firebase 已連線" data-en="Firebase Connected">Firebase 已連線</span></div>
+          </div>
+          <!-- 右：兩個等寬小卡 -->
+          <div style="display:flex;flex-direction:column;gap:8px;min-width:110px">
+            <div style="background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);border-radius:12px;padding:10px 12px;flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center">
+              <div style="font-size:13px;color:rgba(255,255,255,.85);margin-bottom:4px" data-zh="今日集點" data-en="Today Points">今日集點</div>
+              <div id="stat-count" style="font-size:24px;font-weight:800;line-height:1;color:#fff">0</div>
+              <div style="font-size:13px;color:rgba(255,255,255,.75);margin-top:3px" data-zh="次" data-en="scans">次</div>
+            </div>
+            <div style="background:rgba(255,255,255,.12);border:0.5px solid rgba(255,255,255,.2);border-radius:12px;padding:10px 12px;flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center">
+              <div style="font-size:13px;color:rgba(255,255,255,.85);font-weight:600;margin-bottom:4px" data-zh="今日送點" data-en="Today Pts">今日送點</div>
+              <div id="stat-pts" style="font-size:24px;font-weight:800;line-height:1;color:#fff">0</div>
+              <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:3px" data-zh="點" data-en="pts">點</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button id="btn-shop-install" class="install-btn" onclick="handleShopInstall()">
+        📲 <span data-zh="加入主畫面（BINI Backend）" data-en="Add to Home (BINI Backend)">加入主畫面（BINI Backend）</span>
+      </button>
+      <button id="btn-admin-enable-push" onclick="handleAdminEnablePush()" style="display:none;width:100%;padding:11px 16px;background:#3d0c1a;color:#fff;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;align-items:center;justify-content:center;gap:7px;margin-top:8px">
+        🔔 <span data-zh="開啟推播通知" data-en="Enable Notifications">開啟推播通知</span>
+      </button>
+
+    </div>
+    <div class="card">
+      <div class="card-title"><span data-zh="產生集點 QR Code" data-en="Generate Points QR">產生集點 QR Code</span></div>
+      <p style="font-size:13px;color:var(--brown);margin-bottom:12px;line-height:1.6">
+        <span data-zh="① 點「產生 QR Code」→ ② 客人掃描 → ③ 輸入消費金額確認 → ④ 系統自動計算並給予點數" data-en="① Tap Generate QR → ② Customer scans → ③ Enter amount → ④ Points awarded automatically">① 點「產生 QR Code」→ ② 客人掃描 → ③ 輸入消費金額確認 → ④ 系統自動計算並給予點數</span>
+      </p>
+      <button class="btn btn-primary" onclick="generateQR()"><span data-zh="產生 QR Code" data-en="Generate QR">產生 QR Code</span></button>
+    </div>
+    <div class="qr-section" id="qr-section">
+      <div class="cd-box">
+        <span style="font-size:16px">⏱</span>
+        <span style="font-size:13px;color:var(--brown);font-weight:600"><span data-zh="有效時間" data-en="Valid Time">有效時間</span></span>
+        <span class="cd-num" id="countdown">02:00</span>
+      </div>
+      <div class="qr-white">
+        <canvas id="qr-canvas"></canvas>
+        <div class="qr-member-info" id="qr-member-info" data-zh="等待客人掃描中..." data-en="Waiting for customer scan...">等待客人掃描中...</div>
+      </div>
+      <!-- 客人掃描後顯示的輸入金額表單 -->
+      <div class="qr-amount-form" id="qr-amount-form" style="display:none">
+        <p style="font-size:14px;font-weight:700;color:var(--brown);margin-bottom:10px"><span data-zh="✅ 請輸入本次消費金額" data-en="✅ Enter purchase amount">✅ 請輸入本次消費金額</span></p>
+        <input type="hidden" id="qr-confirm-token">
+        <input type="hidden" id="qr-confirm-uid">
+        <label><span data-zh="消費金額（NT$）" data-en="Amount (NT$)">消費金額（NT$）</span></label>
+        <input type="number" id="inp-confirm-amount" placeholder="例：1500" data-ph-zh="例：1500" data-ph-en="e.g. 1500" min="1" inputmode="numeric">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="confirmAmount()" id="btn-confirm-amount" style="flex:2"><span data-zh="確認發點" data-en="Confirm Points">確認發點</span></button>
+          <button class="btn btn-outline" onclick="cancelScan()" style="flex:1;margin-bottom:0"><span data-zh="取消" data-en="Cancel">取消</span></button>
+        </div>
+      </div>
+      <button class="btn btn-outline" onclick="clearQR()" style="margin-top:10px"><span data-zh="清除 QR Code" data-en="Clear QR">清除 QR Code</span></button>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-title"><span data-zh="今日統計" data-en="Today's Stats">今日統計</span></div>
+      <div class="stats-row">
+        <div class="stat-box"><div class="stat-lbl"><span data-zh="集點次數" data-en="Scans">集點次數</span></div><div class="stat-val" id="stat-count-card">—</div></div>
+        <div class="stat-box"><div class="stat-lbl"><span data-zh="總消費" data-en="Total Sales">總消費</span></div><div class="stat-val" id="stat-sales">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 公告 -->
+  <div class="tab-page" id="tab-announce-page">
+    <div style="margin-top:0">
+      <div class="form-card">
+        <div class="card-title"><span data-zh="📢 發送公告" data-en="📢 Send Announcement">📢 發送公告</span></div>
+        <label><span data-zh="公告標題" data-en="Title">公告標題</span></label>
+        <input type="text" id="ann-title" placeholder="例：新品上架通知" data-ph-zh="例：新品上架通知" data-ph-en="e.g. New Arrivals">
+        <label><span data-zh="公告內容" data-en="Content">公告內容</span></label>
+        <textarea id="ann-body" rows="4" style="resize:vertical" placeholder="輸入公告內容..." data-ph-zh="輸入公告內容..." data-ph-en="Enter announcement content..."></textarea>
+        <label><span data-zh="附加圖片（選填，最大10MB）" data-en="Attach Image (optional, max 10MB)">附加圖片（選填，最大10MB）</span></label>
+        <div id="ann-img-preview" style="margin-bottom:8px"></div>
+        <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;color:var(--brown);font-weight:600;font-size:13px;margin-bottom:11px;background:var(--pale);border-radius:8px;padding:7px 13px">
+          <span data-zh="📷 選擇圖片" data-en="📷 Choose Image">📷 選擇圖片</span>
+          <input type="file" id="ann-img-input" accept="image/*" style="display:none" onchange="previewAnnImg(this)">
+        </label>
+        <button class="btn btn-primary" onclick="sendAnnouncement()" id="btn-send-ann">📢 發送公告</button>
+      </div>
+      <div id="announce-list-shop"></div>
+    </div>
+  </div>
+
+  <!-- 廣播訊息 -->
+  <div class="tab-page" id="tab-broadcast-page">
+    <div style="margin-top:0">
+      <div class="form-card">
+        <div class="card-title"><span data-zh="📣 廣播訊息" data-en="📣 Broadcast">📣 廣播訊息</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px;line-height:1.6"><span data-zh="廣播訊息會顯示在客戶 APP 的公告頁面，適合發送優惠通知、活動資訊等。" data-en="Broadcasts appear on the customer app, great for promotions.">廣播訊息會顯示在客戶 APP 的公告頁面，適合發送優惠通知、活動資訊等。</span></p>
+        <label><span data-zh="訊息標題" data-en="Title">訊息標題</span></label>
+        <input type="text" id="bc-title" placeholder="例：本週特賣活動通知" data-ph-zh="例：本週特賣活動通知" data-ph-en="e.g. This week's sale">
+        <label><span data-zh="訊息內容" data-en="Content">訊息內容</span></label>
+        <textarea id="bc-body" rows="5" style="resize:vertical" placeholder="輸入廣播內容..." data-ph-zh="輸入廣播內容..." data-ph-en="Enter broadcast content..."></textarea>
+        <button class="btn btn-primary" onclick="sendBroadcast()" id="btn-send-bc"><span data-zh="📣 發送廣播" data-en="📣 Send Broadcast">📣 發送廣播</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 獎品 -->
+  <div class="tab-page" id="tab-rewards-page">
+    <div style="margin-top:0">
+      <div id="reward-list-wrap" style="margin-bottom:12px"><p class="empty-hint">載入中...</p></div>
+      <div class="form-card">
+        <div class="card-title"><span id="rw-form-title" data-zh="➕ 新增獎品" data-en="➕ Add Reward">➕ 新增獎品</span></div>
+        <label><span data-zh="中文名稱" data-en="Chinese Name">中文名稱</span></label>
+        <input type="text" id="rw-name-zh" placeholder="例：買一送一折扣券">
+        <label><span data-zh="英文名稱" data-en="English Name">英文名稱</span></label>
+        <input type="text" id="rw-name-en" placeholder="e.g. Buy 1 Get 1 Voucher">
+        <div class="form-row">
+          <div><label>Emoji</label><input type="text" id="rw-emoji" placeholder="🛍️" maxlength="2"></div>
+          <div><label><span data-zh="需要點數" data-en="Points Required">需要點數</span></label><input type="number" id="rw-pts" placeholder="100" min="1" inputmode="numeric"></div>
+        </div>
+        <label><span data-zh="獎品圖片（選填，最大10MB）" data-en="Reward Image (optional, max 10MB)">獎品圖片（選填，最大10MB）</span></label>
+        <div id="rw-img-preview" style="margin-bottom:8px"></div>
+        <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;color:var(--brown);font-weight:600;font-size:13px;margin-bottom:11px;background:var(--pale);border-radius:8px;padding:7px 13px">
+          <span data-zh="📷 拍照 / 選擇圖片" data-en="📷 Take Photo / Choose">📷 拍照 / 選擇圖片</span>
+          <input type="file" id="rw-img-input" accept="image/*" style="display:none" onchange="previewRewardImg(this)">
+        </label>
+        <button class="btn btn-primary" id="rw-save-btn" onclick="saveReward()">新增獎品</button>
+        <button class="btn btn-outline" id="rw-cancel-btn" onclick="cancelEditReward()" style="display:none;margin-top:8px"><span data-zh="取消編輯" data-en="Cancel">取消編輯</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 資料分析 -->
+  <div class="tab-page" id="tab-analytics-page">
+    <div style="margin-top:0">
+      <div id="analytics-content"><p class="empty-hint"><span data-zh="點擊上方「分析」分頁載入資料" data-en="Click the Analytics tab to load data">點擊上方「分析」分頁載入資料</span></p></div>
+    </div>
+  </div>
+
+  <!-- 客服 -->
+  <div class="tab-page" id="tab-msg-page">
+    <div style="margin-top:0">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:9px">
+        <button id="inbox-toggle-hidden" onclick="toggleInboxHidden()" class="inbox-act"><span data-zh="顯示已隱藏" data-en="Show Hidden">顯示已隱藏</span></button>
+      </div>
+      <div id="inbox-list" class="inbox-list"><p class="empty-hint">載入中...</p></div>
+    </div>
+  </div>
+
+  <!-- 設定 -->
+  <div class="tab-page" id="tab-settings-page">
+    <div style="margin-top:12px">
+
+      <!-- 集點規則設定 -->
+      <div class="card">
+        <div class="card-title"><span data-zh="💰 集點規則設定" data-en="💰 Point Settings">💰 集點規則設定</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.7"><span data-zh="設定消費金額與點數的對應關係，以及各會員等級的點數倍數。儲存後客戶端將即時更新。" data-en="Set the spending-to-points ratio and tier multipliers. Changes apply instantly to the customer app.">設定消費金額與點數的對應關係，以及各會員等級的點數倍數。儲存後客戶端將即時更新。</span></p>
+
+        <label><span data-zh="基本單位金額（NT$）" data-en="Base Unit Amount (NT$)">基本單位金額（NT$）</span></label>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;color:#888">NT$</span>
+          <input type="number" id="settings-base-unit" min="1" step="1" style="width:120px" value="200" oninput="updateSettingsPreview()">
+          <span style="font-size:13px;color:#888"><span data-zh="消費 = 基礎 1 點" data-en="spent = 1 base point">消費 = 基礎 1 點</span></span>
+        </div>
+        <p style="font-size:12px;color:#b07080;margin-bottom:16px"><span data-zh="例：設為 200，表示每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）" data-en="e.g. 200 means every NT$200 earns 1 base point × tier multiplier">例：設為 200，表示每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）</span></p>
+
+        <label><span data-zh="各會員等級點數倍數" data-en="Points Multiplier per Tier">各會員等級點數倍數</span></label>
+        <div id="tier-rate-inputs" style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:90px;font-size:13px;font-weight:600">🛍️ <span data-zh="一般會員" data-en="Member">一般會員</span></span>
+            <input type="number" id="rate-normal" min="0.1" step="0.1" style="width:80px" value="1.0" oninput="updateSettingsPreview()">
+            <span style="font-size:12px;color:#888"><span data-zh="倍" data-en="x">倍</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:90px;font-size:13px;font-weight:600">⭐ VIP</span>
+            <input type="number" id="rate-vip" min="0.1" step="0.1" style="width:80px" value="1.3" oninput="updateSettingsPreview()">
+            <span style="font-size:12px;color:#888"><span data-zh="倍" data-en="x">倍</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:90px;font-size:13px;font-weight:600">🌟 VVIP</span>
+            <input type="number" id="rate-vvip" min="0.1" step="0.1" style="width:80px" value="1.5" oninput="updateSettingsPreview()">
+            <span style="font-size:12px;color:#888"><span data-zh="倍" data-en="x">倍</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:90px;font-size:13px;font-weight:600">💎 VVVIP</span>
+            <input type="number" id="rate-vvvip" min="0.1" step="0.1" style="width:80px" value="2.0" oninput="updateSettingsPreview()">
+            <span style="font-size:12px;color:#888"><span data-zh="倍" data-en="x">倍</span></span>
+          </div>
+        </div>
+
+        <div style="background:var(--pale);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--brown)">
+          <div style="font-weight:700;margin-bottom:6px">📊 <span data-zh="目前換算預覽" data-en="Current Preview">目前換算預覽</span></div>
+          <div id="settings-preview"></div>
+        </div>
+
+        <button class="btn btn-primary" onclick="savePointSettings()" id="btn-save-point-settings">
+          <span data-zh="💾 儲存集點設定" data-en="💾 Save Settings">💾 儲存集點設定</span>
+        </button>
+        <div id="settings-save-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
+      </div>
+
+      <!-- 購物規則設定 -->
+      <div class="card">
+        <div class="card-title"><span data-zh="🛒 購物規則設定" data-en="🛒 Shop Rules">🛒 購物規則設定</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.7">
+          <span data-zh="設定點數折抵門檻與免運費條件。儲存後即時生效。" data-en="Set the minimum order for points discount and free shipping threshold.">設定點數折抵門檻與免運費條件。儲存後即時生效。</span>
+        </p>
+
+        <label><span data-zh="點數折抵最低消費門檻（NT$）" data-en="Min. order for points discount (NT$)">點數折抵最低消費門檻（NT$）</span></label>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;color:#888">NT$</span>
+          <input type="number" id="settings-point-min-order" min="0" step="1" style="width:120px" value="300">
+          <span style="font-size:13px;color:#888"><span data-zh="以上可使用點數折抵" data-en="or above to use points">以上可使用點數折抵</span></span>
+        </div>
+        <p style="font-size:12px;color:#b07080;margin-bottom:16px">
+          <span data-zh="設為 0 表示不限金額皆可折抵" data-en="Set to 0 for no minimum">設為 0 表示不限金額皆可折抵</span>
+        </p>
+
+        <label><span data-zh="免運費最低消費門檻（NT$）" data-en="Free shipping threshold (NT$)">免運費最低消費門檻（NT$）</span></label>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:13px;color:#888">NT$</span>
+          <input type="number" id="settings-free-shipping" min="0" step="1" style="width:120px" value="0">
+          <span style="font-size:13px;color:#888"><span data-zh="以上免運費" data-en="or above = free shipping">以上免運費</span></span>
+        </div>
+        <p style="font-size:12px;color:#b07080;margin-bottom:16px">
+          <span data-zh="設為 0 表示不提供免運費" data-en="Set to 0 to disable free shipping">設為 0 表示不提供免運費</span>
+        </p>
+
+        <button class="btn btn-primary" onclick="saveShopRules()" id="btn-save-shop-rules">
+          <span data-zh="💾 儲存購物規則" data-en="💾 Save Shop Rules">💾 儲存購物規則</span>
+        </button>
+        <div id="shop-rules-save-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
+      </div>
+
+      <!-- 帳號設定 -->
+      <div class="card">
+        <div class="card-title"><span data-zh="帳號設定" data-en="Account Settings">帳號設定</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px"><span data-zh="登入帳號：" data-en="Account: ">登入帳號：</span><strong id="settings-email"></strong></p>
+        <button class="btn btn-outline" onclick="document.getElementById('pw-section').style.display=document.getElementById('pw-section').style.display==='none'?'block':'none'">
+          <span data-zh="修改密碼" data-en="Change Password">修改密碼</span>
+        </button>
+        <div id="pw-section" style="display:none;margin-top:12px">
+          <label><span data-zh="目前密碼" data-en="Current Password">目前密碼</span></label>
+          <input type="password" id="old-password" placeholder="輸入目前密碼" data-ph-zh="輸入目前密碼" data-ph-en="Current password">
+          <label><span data-zh="新密碼（6位數以上）" data-en="New Password (6+ chars)">新密碼（6位數以上）</span></label>
+          <input type="password" id="new-password" placeholder="輸入新密碼" data-ph-zh="輸入新密碼" data-ph-en="New password">
+          <label><span data-zh="確認新密碼" data-en="Confirm Password">確認新密碼</span></label>
+          <input type="password" id="new-password2" placeholder="再次輸入新密碼" data-ph-zh="再次輸入新密碼" data-ph-en="Confirm new password">
+          <button class="btn btn-primary" onclick="handleChangePw()"><span data-zh="確認修改密碼" data-en="Confirm">確認修改密碼</span></button>
+        </div>
+        <button class="btn btn-outline" style="margin-top:4px" onclick="handleForgotPw_settings()"><span data-zh="忘記密碼？寄送重設郵件" data-en="Forgot password? Send reset email">忘記密碼？寄送重設郵件</span></button>
+      </div>
+      <div class="card">
+        <div class="card-title"><span data-zh="系統資訊" data-en="System Info">系統資訊</span></div>
+        <div style="font-size:13px;color:#888;line-height:2">
+          <span data-zh="版本：v3.0.44-prod" data-en="Version: v3.0.44-prod">版本：v3.0.44-prod</span><br>
+          <span data-zh="客戶端：" data-en="Customer App: ">客戶端：</span><a href="https://bini-blooms-client.web.app" target="_blank" style="color:var(--pink)">bini-blooms-client.web.app</a><br>
+          <span data-zh="後台：" data-en="Admin: ">後台：</span><a href="https://bini-blooms-admin.web.app" target="_blank" style="color:var(--pink)">bini-blooms-admin.web.app</a><br>
+          <span data-zh="確認碼規則：當天日期 MMDD（如5月16日 = 0516）" data-en="Confirm code: Today's date MMDD (e.g. May 16 = 0516)">確認碼規則：當天日期 MMDD（如5月16日 = 0516）</span>
+        </div>
+      </div>
+
+      <!-- 開發工具 -->
+      <div class="card" style="border:1.5px dashed #e0a0b0">
+        <div class="card-title" style="color:#c0392b">⚠️ <span data-zh="刪除資料（不可回復）" data-en="Delete Data (Irreversible)">刪除資料（不可回復）</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px">
+          <span data-zh="清除所有公告、廣播、客服訊息及測試商品。此操作不可復原，請確認後執行。" data-en="Delete all announcements, broadcasts, chat messages and test products. This cannot be undone.">清除所有公告、廣播、客服訊息及測試商品。此操作不可復原，請確認後執行。</span>
+        </p>
+
+        <!-- 密碼鎖：需輸入密碼才會顯示刪除按鈕，避免誤按 -->
+        <div id="clear-data-lock">
+          <input type="password" id="clear-data-pw" autocomplete="off" placeholder="輸入密碼 / Password" style="width:100%;padding:11px 13px;border:1.5px solid #e0a0b0;border-radius:10px;font-size:16px;margin-bottom:8px;box-sizing:border-box">
+          <button onclick="unlockClearData()" class="btn" style="width:100%;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🔓 <span data-zh="解鎖刪除功能" data-en="Unlock">解鎖刪除功能</span>
+          </button>
+        </div>
+
+        <!-- 刪除按鈕：預設隱藏，解鎖後顯示 -->
+        <div id="clear-data-tools" style="display:none">
+          <button onclick="clearTestData('announcements')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有公告" data-en="Clear All Announcements">清除所有公告</span>
+          </button>
+          <button onclick="clearTestData('broadcasts')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有廣播" data-en="Clear All Broadcasts">清除所有廣播</span>
+          </button>
+          <button onclick="clearTestData('chats')" class="btn" style="width:100%;margin-bottom:8px;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有客服訊息" data-en="Clear All Chat Messages">清除所有客服訊息</span>
+          </button>
+          <button onclick="clearTestProducts()" class="btn" style="width:100%;background:#fff0f0;color:#c0392b;border:1px solid #e0a0b0">
+            🗑️ <span data-zh="清除所有測試商品" data-en="Clear Test Products">清除所有測試商品</span>
+          </button>
+        </div>
+        <div id="clear-data-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部導覽列（仿客戶端設計）-->
+  <nav class="admin-bnav" id="admin-bnav">
+    <button class="admin-bnav-btn active" id="tab-qr" onclick="switchTab('qr',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h2v2h-2zm4 0h3v3h-3zm0 4h-1v3h4v-3h-3z" fill="currentColor" stroke="none"/></svg>
+    <span>&#38598;&#40670;</span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-announce" onclick="switchTab('announce',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46"/></svg>
+    <span>&#20844;&#21578;</span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-broadcast" onclick="switchTab('broadcast',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z"/></svg>
+    <span>&#24291;&#25773;</span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-rewards" onclick="switchTab('rewards',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+    <span>&#29518;&#21697;</span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-msg" onclick="switchTab('msg',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
+    <span>&#23458;&#26381;<span class="admin-badge" id="msg-badge"></span></span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-analytics" onclick="switchTab('analytics',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+    <span>&#20998;&#26512;</span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-settings" onclick="switchTab('settings',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    <span>&#35373;&#23450;</span>
+  </button>
+  </nav>
+</div>
+
+<!-- 對話視窗 -->
+<div id="chat-view">
+  <div class="chat-top">
+    <button class="back-btn" onclick="closeChat()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+      <span data-zh="返回" data-en="Back">返回</span>
+    </button>
+    <div>
+      <div style="font-size:15px;font-weight:600;color:#fff" id="chat-member-name"></div>
+      <div style="font-size:12px;color:rgba(255,255,255,.6)" id="chat-member-phone"></div>
+    </div>
+  </div>
+  <div class="chat-msgs" id="chat-msgs"></div>
+  <div class="chat-input-row">
+    <label for="admin-img-input" class="img-lbl">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>
+    </label>
+    <input type="file" id="admin-img-input" accept="image/*" style="display:none" onchange="handleAdminImage(this)">
+    <textarea class="chat-ta" id="admin-input" rows="1" placeholder="輸入回覆..." data-ph-zh="輸入回覆..." data-ph-en="Type reply..."
+      oninput="adminResize(this)"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();adminSend()}"></textarea>
+    <button class="send-btn" id="admin-send-btn" onclick="adminSend()">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="admin-toast"></div>
+
+<script>
+window.handleForgotPw_settings=async function(){
+  const admin=document.getElementById('admin-email-display');
+  if(!admin||!admin.textContent){alert('請先確認登入狀態');return;}
+  if(typeof sendPasswordResetEmail==='undefined'){alert('請使用登入頁的忘記密碼功能');return;}
+};
+</script>
+<script src="/qrcode.bundle.js"></script>
+<script type="module" src="./admin-app.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  // 新版 SW 接管時自動重新整理一次，部署後即可看到最新版
+  let _swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if(_swReloaded) return; _swReloaded = true; location.reload();
+  });
+  window.addEventListener('load', async () => {
+    try {
+      // 只清除「非本站」的舊 SW
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for(const reg of regs){
+        const url = (reg.active || reg.waiting || reg.installing)?.scriptURL || '';
+        if(url && !url.includes(location.origin)){ await reg.unregister(); }
+      }
+      const r2 = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {updateViaCache:'none'});
+      await r2.update();
+    } catch(e) { console.log('Admin SW 錯誤:', e); }
+  });
+}
+// 設定頁顯示 email
+document.addEventListener('DOMContentLoaded',()=>{
+  const se=document.getElementById('settings-email');
+  if(se) setTimeout(()=>{ const ad=document.getElementById('admin-email-display'); if(ad) se.textContent=ad.textContent; },2000);
+});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module" src="admin-shop.js"></script>
+</body>
+</html>

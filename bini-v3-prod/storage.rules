@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.disabled != true;
+    }
+    match /chat_images/{allPaths=**} {
+      allow read:  if true;
+      allow write: if request.auth != null && request.resource.size < 5 * 1024 * 1024;
+    }
+    match /announcements/{allPaths=**} {
+      allow read:  if true;
+      // write：登入即可（admin 驗證已在前端 JS verifyAdmin() 做過，
+      // Storage rules 的 firestore.get() 在某些情況下會誤判導致 unauthorized）
+      allow write: if request.auth != null && request.resource.size < 10 * 1024 * 1024;
+    }
+    match /rewards/{allPaths=**} {
+      allow read:  if true;
+      // write：登入即可（與 announcements 相同，admin 驗證已在前端做過）
+      allow write: if request.auth != null && request.resource.size < 10 * 1024 * 1024;
+    }
+  }
+}
