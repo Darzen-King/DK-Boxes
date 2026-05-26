@@ -392,15 +392,20 @@ window.handleCompleteRegister = async function() {
       joinedAt: serverTimestamp(),
       welcomeBonus: true,
     });
-    // 寫入歡迎贈點交易紀錄
-    await addDoc(collection(db,'transactions'), {
-      uid: user.uid,
-      type: 'welcome',
-      points: 10,
-      desc: '新會員歡迎贈點',
-      descEn: 'Welcome bonus points',
-      createdAt: serverTimestamp(),
-    });
+    // 寫入歡迎贈點交易紀錄（非關鍵：點數已記在 member 文件，這只是歷史紀錄。
+    // 若因規則未部署等原因失敗，不應中斷註冊，否則使用者會卡在註冊頁無法返回）
+    try {
+      await addDoc(collection(db,'transactions'), {
+        uid: user.uid,
+        type: 'welcome',
+        points: 10,
+        desc: '新會員歡迎贈點',
+        descEn: 'Welcome bonus points',
+        createdAt: serverTimestamp(),
+      });
+    } catch(txErr) {
+      console.warn('welcome transaction write failed (non-fatal):', txErr.code || txErr.message);
+    }
     // 推薦碼（選填）：僅記錄推薦關係，新會員不會額外加點；
     // 推薦人的回饋待此新會員首次消費集點時才發放。
     let referralApplied = false;
@@ -437,6 +442,12 @@ window.handleCompleteRegister = async function() {
     };
     setMsg(msgEl, m[e.code]||t('建立失敗，請重試（'+e.code+'）','Failed: '+e.code), 'error');
   }
+};
+
+// 註冊途中返回登入：登出未完成的 phone-auth 階段，onAuthStateChanged 會自動回到登入畫面
+window.cancelRegister = async function() {
+  try { await signOut(auth); } catch(e) {}
+  showView('login');
 };
 
 window.handleLogout = async function() {
