@@ -117,9 +117,8 @@ function applyAdminLang() {
   const btnConfirmPw = document.querySelector('#pw-section .btn-primary');
   if (btnConfirmPw) btnConfirmPw.textContent = l==='zh' ? '確認修改密碼' : 'Confirm';
 
-  // 9. 新增獎品按鈕
-  const btnAddRw = document.querySelector('#tab-rewards-page .btn-primary');
-  if (btnAddRw) btnAddRw.textContent = l==='zh' ? '新增獎品' : 'Add Reward';
+  // 9. 獎品表單（標題/按鈕依新增或編輯模式切換語言）
+  if (typeof applyRewardFormMode === 'function') applyRewardFormMode();
 
   // 10. 對話視窗返回按鈕
   const backBtn = document.querySelector('.back-btn');
@@ -649,25 +648,31 @@ async function loadAnnouncements(){
 window.deleteAnn=async function(id){ if(!confirm(shopLang==='zh'?'確定刪除？':'Delete this announcement?'))return; try{await deleteDoc(doc(db,'announcements',id));loadAnnouncements();}catch(e){alert('Error:'+e.message);} };
 
 // ── 獎品 ──
+let _rewardsById={};
 async function loadRewards(){
   const wrap=document.getElementById('reward-list-wrap'); wrap.innerHTML='';
   try{
     const snap=await getDocs(collection(db,'rewards'));
     if(snap.empty){ wrap.innerHTML=shopLang==='zh'?'<p class="empty-hint">尚無獎品</p>':'<p class="empty-hint">No rewards yet</p>'; return; }
     const items=[]; snap.forEach(d=>items.push({id:d.id,...d.data()})); items.sort((a,b)=>a.pts-b.pts);
+    _rewardsById={};
     items.forEach(r=>{
+      _rewardsById[r.id]=r;
       const row=document.createElement('div'); row.className='reward-row';
       const thumb=r.imageUrl
         ? `<img src="${esc(r.imageUrl)}" style="width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0">`
         : `<div style="font-size:26px">${r.emoji||'🎁'}</div>`;
       row.innerHTML=`${thumb}
         <div class="reward-row-info"><div class="reward-row-name">${esc(r.name_zh||r.name)}</div><div class="reward-row-en">${esc(r.name_en||'')}</div><div class="reward-row-pts">${r.pts.toLocaleString()} ${shopLang==='zh'?'點':'pts'}</div></div>
-        <button class="btn-sm btn-danger" onclick="deleteReward('${r.id}')">${shopLang==='zh'?'刪除':'Delete'}</button>`;
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          <button class="btn-sm btn-outline" onclick="editReward('${r.id}')">${shopLang==='zh'?'編輯':'Edit'}</button>
+          <button class="btn-sm btn-danger" onclick="deleteReward('${r.id}')">${shopLang==='zh'?'刪除':'Delete'}</button>
+        </div>`;
       wrap.appendChild(row);
     });
   } catch(e){ console.error(e); }
 }
-let rwImgFile=null;
+let rwImgFile=null, editingRewardId=null;
 window.previewRewardImg=function(input){
   const f=input.files[0];
   if(f && f.size>10*1024*1024){ alert(shopLang==='zh'?'圖片不能超過 10MB':'Image must be under 10MB'); input.value=''; return; }
@@ -676,22 +681,55 @@ window.previewRewardImg=function(input){
   if(rwImgFile){ const url=URL.createObjectURL(rwImgFile); preview.innerHTML=`<img src="${url}" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover">`; }
   else preview.innerHTML='';
 };
-window.addReward=async function(){
+// 依目前是「新增」或「編輯」模式更新表單標題/按鈕文字
+function applyRewardFormMode(){
+  const editing=!!editingRewardId;
+  const title=document.getElementById('rw-form-title');
+  const save=document.getElementById('rw-save-btn');
+  const cancel=document.getElementById('rw-cancel-btn');
+  if(title) title.textContent = editing ? (shopLang==='zh'?'✏️ 編輯獎品':'✏️ Edit Reward') : (shopLang==='zh'?'➕ 新增獎品':'➕ Add Reward');
+  if(save) save.textContent = editing ? (shopLang==='zh'?'更新獎品':'Update Reward') : (shopLang==='zh'?'新增獎品':'Add Reward');
+  if(cancel) cancel.style.display = editing ? '' : 'none';
+}
+function resetRewardForm(){
+  editingRewardId=null; rwImgFile=null;
+  ['rw-name-zh','rw-name-en','rw-emoji','rw-pts'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+  const p=document.getElementById('rw-img-preview'); if(p) p.innerHTML='';
+  const inp=document.getElementById('rw-img-input'); if(inp) inp.value='';
+  applyRewardFormMode();
+}
+window.cancelEditReward=function(){ resetRewardForm(); };
+window.editReward=function(id){
+  const r=_rewardsById[id]; if(!r) return;
+  editingRewardId=id; rwImgFile=null;
+  document.getElementById('rw-name-zh').value=r.name_zh||r.name||'';
+  document.getElementById('rw-name-en').value=r.name_en||'';
+  document.getElementById('rw-emoji').value=r.emoji||'';
+  document.getElementById('rw-pts').value=r.pts||'';
+  document.getElementById('rw-img-input').value='';
+  const preview=document.getElementById('rw-img-preview');
+  preview.innerHTML = r.imageUrl ? `<img src="${esc(r.imageUrl)}" style="width:100%;border-radius:10px;max-height:180px;object-fit:cover">` : '';
+  applyRewardFormMode();
+  document.querySelector('#tab-rewards-page .form-card')?.scrollIntoView({behavior:'smooth',block:'start'});
+};
+window.saveReward=async function(){
   const nz=document.getElementById('rw-name-zh').value.trim(),ne=document.getElementById('rw-name-en').value.trim(),em=document.getElementById('rw-emoji').value.trim()||'🎁',pts=parseInt(document.getElementById('rw-pts').value);
-  if(!nz||!pts||pts<1){ alert('請填寫完整資訊'); return; }
-  const btn=document.querySelector('#tab-rewards-page .btn-primary'); if(btn){ btn.disabled=true; btn.textContent=shopLang==='zh'?'上傳中…':'Uploading…'; }
+  if(!nz||!pts||pts<1){ alert(shopLang==='zh'?'請填寫完整資訊':'Please fill all fields'); return; }
+  const btn=document.getElementById('rw-save-btn'); if(btn){ btn.disabled=true; btn.textContent=shopLang==='zh'?'處理中…':'Saving…'; }
   try{
-    let imageUrl='';
-    if(rwImgFile){ const sRef=ref(storage,`rewards/${Date.now()}_${rwImgFile.name}`); await uploadBytes(sRef,rwImgFile); imageUrl=await getDownloadURL(sRef); }
-    await addDoc(collection(db,'rewards'),{name_zh:nz,name_en:ne||nz,emoji:em,pts,imageUrl,createdAt:serverTimestamp()});
-    ['rw-name-zh','rw-name-en','rw-emoji','rw-pts'].forEach(id=>document.getElementById(id).value='');
-    rwImgFile=null; document.getElementById('rw-img-preview').innerHTML=''; document.getElementById('rw-img-input').value='';
-    await loadRewards(); alert('✅ 獎品已新增！');
+    const data={name_zh:nz,name_en:ne||nz,emoji:em,pts};
+    if(rwImgFile){ const sRef=ref(storage,`rewards/${Date.now()}_${rwImgFile.name}`); await uploadBytes(sRef,rwImgFile); data.imageUrl=await getDownloadURL(sRef); }
+    const wasEdit=!!editingRewardId;
+    if(wasEdit){ await updateDoc(doc(db,'rewards',editingRewardId),data); }
+    else{ data.imageUrl=data.imageUrl||''; data.createdAt=serverTimestamp(); await addDoc(collection(db,'rewards'),data); }
+    resetRewardForm();
+    await loadRewards();
+    alert(wasEdit ? (shopLang==='zh'?'✅ 獎品已更新！':'✅ Reward updated!') : (shopLang==='zh'?'✅ 獎品已新增！':'✅ Reward added!'));
   }
   catch(e){ alert('Error: '+e.message); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent=shopLang==='zh'?'新增獎品':'Add Reward'; } }
+  finally{ if(btn) btn.disabled=false; applyRewardFormMode(); }
 };
-window.deleteReward=async function(id){ if(!confirm(shopLang==='zh'?'確定刪除？':'Delete this reward?'))return; try{await deleteDoc(doc(db,'rewards',id));loadRewards();}catch(e){alert('Error:'+e.message);} };
+window.deleteReward=async function(id){ if(!confirm(shopLang==='zh'?'確定刪除？':'Delete this reward?'))return; try{await deleteDoc(doc(db,'rewards',id)); if(editingRewardId===id) resetRewardForm(); loadRewards();}catch(e){alert('Error:'+e.message);} };
 
 // ── 收件匣 ──
 function startInbox(){
