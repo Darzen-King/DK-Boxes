@@ -600,6 +600,12 @@
 
 <div id="toast" class="toast"></div>
 
+<!-- 圖片放大檢視 -->
+<div id="img-viewer" class="img-viewer" style="display:none" onclick="closeImageViewer()">
+  <span class="img-viewer-close">&times;</span>
+  <img id="img-viewer-img" src="" alt="">
+</div>
+
 <script type="module" src="/js/app.js"></script>
 <script>
 if('serviceWorker' in navigator){
