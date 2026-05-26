@@ -203,6 +203,7 @@ const ShopPage = {
   },
 
   init() {
+    this._activePage = "shop-list";  // 回到商品列表時重設，避免語言切換誤跳到我的訂單
     ShopUI.updateCartBadge();
     // 必須登入後才能讀取商品
     if (!auth.currentUser) {
