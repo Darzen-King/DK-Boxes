@@ -763,6 +763,8 @@ function injectShopAdminUI() {
   // ── 3. 修正 switchTab 支援新頁面 ──
   const _origSwitchTab = window.switchTab;
   window.switchTab = function(tab, btn) {
+    // 切換分頁時把刪除工具重新上鎖（此包裝完全取代原 switchTab，必須在此處再呼叫一次）
+    if (typeof window.lockClearData === 'function') window.lockClearData();
     // 隱藏所有 tab-page（包含動態插入的）
     document.querySelectorAll('.tab-page').forEach(p => {
       p.classList.remove('active');
