@@ -365,6 +365,8 @@ function lockClearData(){
   if (pw)    pw.value = '';
   if (msg)   msg.textContent = '';
 }
+// 暴露到 window：admin-shop.js 會覆寫 window.switchTab，那個版本也要能呼叫到此函式
+window.lockClearData = lockClearData;
 
 // ── PWA ──
 function isIOSDevice(){
