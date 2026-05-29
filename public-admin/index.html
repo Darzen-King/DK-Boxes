@@ -480,6 +480,13 @@ input:focus,textarea:focus{border-color:var(--pink)}
         <button class="btn btn-outline" style="margin-top:4px" onclick="handleForgotPw_settings()"><span data-zh="忘記密碼？寄送重設郵件" data-en="Forgot password? Send reset email">忘記密碼？寄送重設郵件</span></button>
       </div>
       <div class="card">
+        <div class="card-title"><span data-zh="推播通知" data-en="Push Notifications">推播通知</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px;line-height:1.6">
+          <span data-zh="如果收不到推播通知（如新訂單、新客服訊息），點此重新註冊。" data-en="Not receiving push (new orders, chat messages, etc.)? Tap to re-register.">如果收不到推播通知（如新訂單、新客服訊息），點此重新註冊。</span>
+        </p>
+        <button class="btn btn-outline" onclick="reEnableAdminPush()"><span data-zh="重新啟用推播" data-en="Re-enable Push">重新啟用推播</span></button>
+      </div>
+      <div class="card">
         <div class="card-title"><span data-zh="系統資訊" data-en="System Info">系統資訊</span></div>
         <div style="font-size:13px;color:#888;line-height:2">
           <span data-zh="版本：v3.0.44-prod" data-en="Version: v3.0.44-prod">版本：v3.0.44-prod</span><br>
