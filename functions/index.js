@@ -39,20 +39,29 @@ const RULES = {
 };
 
 // ─────────────────────────────────────────────
+// FCM 錯誤碼：代表此 token 已失效（裝置移除 PWA、清快取、token 過期等），
+// 應從資料庫移除，避免之後每次推播都對同一個壞 token 重複失敗。
+const STALE_FCM_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
+
 async function sendPush(uid, title, body, data = {}) {
   try {
     const snap = await db.collection("push_tokens").doc(uid).get();
     if (!snap.exists) return;
     const d = snap.data();
 
-    // 收集所有有效 token（支援新版 tokens map 和舊版單一 token）
-    const tokens = [];
+    // 收集 token 並記住來源欄位路徑，以便失效時精準清除該欄位
+    const entries = []; // [{ token, path }]，path 為 doc 內的欄位路徑
     if (d.tokens && typeof d.tokens === "object") {
-      Object.values(d.tokens).forEach(t => { if (t) tokens.push(t); });
+      Object.entries(d.tokens).forEach(([k, t]) => {
+        if (t) entries.push({ token: t, path: `tokens.${k}` });
+      });
     } else if (d.token) {
-      tokens.push(d.token);
+      entries.push({ token: d.token, path: "token" });
     }
-    if (!tokens.length) return;
+    if (!entries.length) return;
 
     // ⚠️ 純 data 訊息：不帶 notification 欄位，避免 FCM 自動顯示 + SW 各顯示一次（重複推播）
     // SW 的 onBackgroundMessage 統一負責顯示通知
@@ -70,13 +79,43 @@ async function sendPush(uid, title, body, data = {}) {
       },
     };
 
-    // 多 token 同時推播
-    if (tokens.length === 1) {
-      await admin.messaging().send({ ...msg, token: tokens[0] });
+    const stalePaths = [];
+
+    if (entries.length === 1) {
+      try {
+        await admin.messaging().send({ ...msg, token: entries[0].token });
+      } catch (sendErr) {
+        if (STALE_FCM_CODES.has(sendErr.code)) {
+          stalePaths.push(entries[0].path);
+        } else {
+          console.warn("Push failed:", sendErr.message);
+        }
+      }
     } else {
-      await admin.messaging().sendEachForMulticast({ ...msg, tokens });
+      const resp = await admin.messaging().sendEachForMulticast({ ...msg, tokens: entries.map(e => e.token) });
+      resp.responses.forEach((r, i) => {
+        if (r.success) return;
+        const code = r.error?.code;
+        if (STALE_FCM_CODES.has(code)) stalePaths.push(entries[i].path);
+        else if (code) console.warn(`[push] uid=${uid} send error: ${code}`);
+      });
     }
-    console.log(`✅ Push sent to ${uid}: ${title}`);
+
+    // 自動清除失效 token
+    if (stalePaths.length) {
+      const updates = {};
+      stalePaths.forEach(p => { updates[p] = admin.firestore.FieldValue.delete(); });
+      try {
+        await db.collection("push_tokens").doc(uid).update(updates);
+        console.log(`[push] 已清除 ${stalePaths.length} 個失效 token (uid=${uid})`);
+      } catch (cleanErr) {
+        console.warn(`[push] 清除失效 token 失敗 uid=${uid}:`, cleanErr.message);
+      }
+    }
+
+    if (entries.length - stalePaths.length > 0) {
+      console.log(`✅ Push sent to ${uid}: ${title}`);
+    }
   } catch (e) {
     console.warn("Push failed:", e.message);
   }
@@ -142,16 +181,17 @@ async function checkAdmin(uid) {
 async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://bini-blooms-dev-admin.web.app") {
   try {
     const adminSnap = await db.collection("admin_tokens").get();
-    const tokens = [];
+    // 記下每個 token 來自哪位 admin 的哪個裝置鍵，以便失效時精準清除
+    const entries = []; // [{ token, adminUid, deviceKey }]
     adminSnap.forEach(doc => {
       const d = doc.data();
       if (d.devices && typeof d.devices === "object") {
-        Object.values(d.devices).forEach(device => {
-          if (device.token) tokens.push(device.token);
+        Object.entries(d.devices).forEach(([k, device]) => {
+          if (device?.token) entries.push({ token: device.token, adminUid: doc.id, deviceKey: k });
         });
       }
     });
-    if (!tokens.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
+    if (!entries.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
 
     const msg = {
       data: {
@@ -164,9 +204,31 @@ async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://b
         headers: { "apns-priority": "10" },
         payload: { aps: { sound: "default", "content-available": 1 } },
       },
-      tokens,
+      tokens: entries.map(e => e.token),
     };
     const result = await admin.messaging().sendEachForMulticast(msg);
+
+    // 收集失效 token，依 adminUid 分組清除（一個 admin 可能有多裝置）
+    const staleByAdmin = {}; // { adminUid: [deviceKey, ...] }
+    result.responses.forEach((r, i) => {
+      if (r.success) return;
+      const code = r.error?.code;
+      if (STALE_FCM_CODES.has(code)) {
+        const e = entries[i];
+        (staleByAdmin[e.adminUid] = staleByAdmin[e.adminUid] || []).push(e.deviceKey);
+      }
+    });
+    for (const [adminUid, keys] of Object.entries(staleByAdmin)) {
+      const updates = {};
+      keys.forEach(k => { updates[`devices.${k}`] = admin.firestore.FieldValue.delete(); });
+      try {
+        await db.collection("admin_tokens").doc(adminUid).update(updates);
+        console.log(`[adminPush] 已清除 ${keys.length} 個失效 token (adminUid=${adminUid})`);
+      } catch (cleanErr) {
+        console.warn(`[adminPush] 清除失敗 adminUid=${adminUid}:`, cleanErr.message);
+      }
+    }
+
     console.log(`✅ sendPushToAdmins: ${title}，成功 ${result.successCount}，失敗 ${result.failureCount}`);
   } catch (e) {
     console.warn("sendPushToAdmins failed:", e.message);
