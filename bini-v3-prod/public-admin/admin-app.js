@@ -355,6 +355,7 @@ window.switchTab=function(tab){
 
 // 將刪除工具重設回密碼鎖狀態
 function lockClearData(){
+  if (_clearDataIdleTimer) { clearTimeout(_clearDataIdleTimer); _clearDataIdleTimer = null; }
   const lock = document.getElementById('clear-data-lock');
   const tools = document.getElementById('clear-data-tools');
   const pw = document.getElementById('clear-data-pw');
@@ -1056,6 +1057,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── 清除測試資料 ─────────────────────────────
 // 隱藏功能：需輸入密碼才顯示刪除按鈕，避免誤按
 const CLEAR_DATA_PASSWORD = 'yellowtaxi328';
+// 刪除工具的閒置自動上鎖計時器：解鎖/操作後 15 秒沒按按鈕就自動回鎖
+let _clearDataIdleTimer = null;
+function armClearDataTimer(){
+  if (_clearDataIdleTimer) clearTimeout(_clearDataIdleTimer);
+  _clearDataIdleTimer = setTimeout(() => { lockClearData(); }, 15000);
+}
+
 window.unlockClearData = function() {
   const input = document.getElementById('clear-data-pw');
   const msg = document.getElementById('clear-data-msg');
@@ -1067,12 +1075,16 @@ window.unlockClearData = function() {
   document.getElementById('clear-data-tools').style.display = '';
   if (input) input.value = '';
   if (msg) msg.textContent = '';
+  armClearDataTimer();
 };
 
 window.clearTestData = async function(collectionName) {
-  const msg = document.getElementById('clear-data-msg');
-  const label = { announcements:'公告', broadcasts:'廣播', chats:'客服訊息' }[collectionName] || collectionName;
-  if (!confirm(`確定要刪除所有「${label}」嗎？此操作不可復原。`)) return;
+  // 先停掉閒置計時器，避免 confirm/刪除過程中突然被鎖；完成後再重新計時
+  if (_clearDataIdleTimer) { clearTimeout(_clearDataIdleTimer); _clearDataIdleTimer = null; }
+  try {
+    const msg = document.getElementById('clear-data-msg');
+    const label = { announcements:'公告', broadcasts:'廣播', chats:'客服訊息' }[collectionName] || collectionName;
+    if (!confirm(`確定要刪除所有「${label}」嗎？此操作不可復原。`)) return;
   msg.textContent = '刪除中…'; msg.style.color = '#888';
   try {
     const snap = await getDocs(collection(db, collectionName));
@@ -1090,24 +1102,32 @@ window.clearTestData = async function(collectionName) {
   } catch(e) {
     msg.textContent = `❌ 刪除失敗：${e.message}`; msg.style.color = '#c0392b';
   }
+  } finally {
+    armClearDataTimer();
+  }
 };
 
 window.clearTestProducts = async function() {
-  const msg = document.getElementById('clear-data-msg');
-  if (!confirm('確定要刪除所有含「測試」字樣的商品嗎？此操作不可復原。')) return;
-  msg.textContent = '刪除中…'; msg.style.color = '#888';
+  if (_clearDataIdleTimer) { clearTimeout(_clearDataIdleTimer); _clearDataIdleTimer = null; }
   try {
-    const snap = await getDocs(collection(db, 'products'));
-    let count = 0;
-    for (const d of snap.docs) {
-      const name = d.data().name || '';
-      if (name.includes('測試') || name.toLowerCase().includes('test')) {
-        await deleteDoc(d.ref);
-        count++;
+    const msg = document.getElementById('clear-data-msg');
+    if (!confirm('確定要刪除所有含「測試」字樣的商品嗎？此操作不可復原。')) return;
+    msg.textContent = '刪除中…'; msg.style.color = '#888';
+    try {
+      const snap = await getDocs(collection(db, 'products'));
+      let count = 0;
+      for (const d of snap.docs) {
+        const name = d.data().name || '';
+        if (name.includes('測試') || name.toLowerCase().includes('test')) {
+          await deleteDoc(d.ref);
+          count++;
+        }
       }
+      msg.textContent = `✅ 已刪除 ${count} 筆測試商品`; msg.style.color = '#2d8a4e';
+    } catch(e) {
+      msg.textContent = `❌ 刪除失敗：${e.message}`; msg.style.color = '#c0392b';
     }
-    msg.textContent = `✅ 已刪除 ${count} 筆測試商品`; msg.style.color = '#2d8a4e';
-  } catch(e) {
-    msg.textContent = `❌ 刪除失敗：${e.message}`; msg.style.color = '#c0392b';
+  } finally {
+    armClearDataTimer();
   }
 };
