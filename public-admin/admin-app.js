@@ -341,6 +341,8 @@ window.handleChangePw=async function(){
 
 // ── Tab 切換 ──
 window.switchTab=function(tab){
+  // 切換分頁時自動把刪除工具重新上鎖（即使停留在設定頁未操作也回到密碼狀態），避免誤按
+  lockClearData();
   const _nav=document.getElementById('admin-bnav'); if(_nav) _nav.classList.add('visible');
   document.querySelectorAll('.tab-btn,.admin-bnav-btn').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.tab-page').forEach(p=>{ p.classList.remove('active'); p.scrollTop=0; });
@@ -350,6 +352,18 @@ window.switchTab=function(tab){
   if(tab==='rewards')  loadRewards();
   if(tab==='analytics') loadAnalytics();
 };
+
+// 將刪除工具重設回密碼鎖狀態
+function lockClearData(){
+  const lock = document.getElementById('clear-data-lock');
+  const tools = document.getElementById('clear-data-tools');
+  const pw = document.getElementById('clear-data-pw');
+  const msg = document.getElementById('clear-data-msg');
+  if (lock)  lock.style.display = '';
+  if (tools) tools.style.display = 'none';
+  if (pw)    pw.value = '';
+  if (msg)   msg.textContent = '';
+}
 
 // ── PWA ──
 function isIOSDevice(){
