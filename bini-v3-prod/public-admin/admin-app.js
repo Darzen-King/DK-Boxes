@@ -211,6 +211,33 @@ window.handleAdminEnablePush = async function() {
   await initAdminPush();
 };
 
+// 設定頁的「重新啟用推播」：強制重跑 getToken 並寫回 admin_tokens
+// 用於 token 失效（NotRegistered）等狀況下，由店家手動修復
+window.reEnableAdminPush = async function() {
+  if(!('Notification' in window)) {
+    showToast(shopLang==='zh' ? '此裝置不支援推播' : 'Push not supported on this device');
+    return;
+  }
+  if(Notification.permission === 'denied') {
+    alert(shopLang==='zh'
+      ? '⚠️ 推播權限已被封鎖\n\n請至 iOS「設定 → 通知 → BINI Backend」開啟允許通知，回到 APP 後再試一次。'
+      : '⚠️ Push permission is blocked\n\nPlease enable notifications in iOS Settings → Notifications → BINI Backend, then return to the app and try again.');
+    return;
+  }
+  showToast(shopLang==='zh' ? '重新註冊推播中…' : 'Re-registering push…');
+  try {
+    await initAdminPush();
+    if(Notification.permission === 'granted') {
+      showToast(shopLang==='zh' ? '✅ 推播已重新啟用' : '✅ Push notifications re-enabled');
+    } else {
+      showToast(shopLang==='zh' ? '未啟用推播' : 'Push not enabled');
+    }
+  } catch(e) {
+    console.error('reEnableAdminPush:', e);
+    showToast(shopLang==='zh' ? '推播啟用失敗，請稍後再試' : 'Failed to re-enable push, please retry');
+  }
+};
+
 async function initAdminPush() {
   if(!messaging || !currentAdmin) return;
   if(!('Notification' in window)) return;
