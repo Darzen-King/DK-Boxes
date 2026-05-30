@@ -18,18 +18,27 @@ function Fail($msg) {
 }
 
 function Minimize-Self {
-  # 用 Win32 ShowWindow API 把目前 PowerShell 視窗最小化
+  # 把目前的主控台視窗最小化（用 Win32 GetConsoleWindow + ShowWindow）
   # 設 $env:NO_AUTO_MINIMIZE=1 可停用
   if ($env:NO_AUTO_MINIMIZE) { return }
   try {
     if (-not ('AutoMin.Win' -as [type])) {
-      Add-Type -Name Win -Namespace AutoMin -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);'
+      Add-Type -Name Win -Namespace AutoMin -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern System.IntPtr GetConsoleWindow();
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+'@
     }
-    $hwnd = (Get-Process -Id $PID).MainWindowHandle
+    $hwnd = [AutoMin.Win]::GetConsoleWindow()
     if ($hwnd -ne [System.IntPtr]::Zero) {
       [AutoMin.Win]::ShowWindow($hwnd, 6) | Out-Null  # 6 = SW_MINIMIZE
+    } else {
+      Write-Host "(自動最小化跳過：拿不到視窗 handle)" -ForegroundColor DarkGray
     }
-  } catch { }
+  } catch {
+    Write-Host "(自動最小化失敗：$($_.Exception.Message))" -ForegroundColor DarkGray
+  }
 }
 
 # 1. Node 是否裝好
