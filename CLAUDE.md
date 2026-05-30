@@ -50,4 +50,6 @@
 - ✅ Phase 1.5：風格學習（`src/buildStyleProfile.js` + `style-profile.json` 自動套用）
 - ✅ Phase 2：腳本 → 旁白語音（`src/synthesize.js`，預設 edge-tts，可切 ElevenLabs）
 - ✅ Phase 3：照片 + 音檔 + 字幕 → 9:16 直式 MP4（`src/composeVideo.js`，ffmpeg + Ken Burns + ASS 字幕 + Logo + BGM）
+- ✅ 一鍵流程（`src/produce.js`）：三個 Phase 串接，Phase 1 後跳審稿閘門讓使用者確認/修改腳本
+- ✅ 網路搜尋輔助（`generateScript.js --web`）：Claude 可選用 web_search 找趨勢/熱門 hashtag/季節梗
 - ⏳ Phase 4：包成 localhost 小工具 UI

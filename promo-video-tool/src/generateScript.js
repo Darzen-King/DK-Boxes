@@ -37,6 +37,7 @@ BINI Blooms 宣傳影片工具 — Phase 1（AI 文案）
   --price  <文字>   價格（例 "NT$1280"）
   --notes  <文字>   賣點／補充（例 "情人節熱賣、可保存3年"）
   --seconds <數字>  目標影片秒數（預設 20）
+  --web             開啟網路搜尋（讓 Claude 找趨勢/熱門 hashtag/季節梗，多 ~$0.01–0.03）
 
 範例：
   node src/generateScript.js ./photos/rose.jpg --name "永生玫瑰禮盒" --price "NT$1280" --notes "情人節熱賣"
@@ -54,6 +55,7 @@ function parseArgs(argv) {
     else if (a === "--price") opts.price = argv[++i];
     else if (a === "--notes") opts.notes = argv[++i];
     else if (a === "--seconds") opts.seconds = Number(argv[++i]) || 20;
+    else if (a === "--web") opts.web = true;
     else if (a.startsWith("--")) { console.error(`未知選項：${a}`); process.exit(1); }
     else images.push(a);
   }
@@ -99,7 +101,16 @@ function buildPrompt(opts, style) {
 ${JSON.stringify(style, null, 2)}
 ` : "";
 
-  return `你是 BINI Blooms（一家主打菲律賓客群的花店/禮盒品牌）的社群行銷文案專家。${styleBlock}
+  const webBlock = opts.web ? `
+
+【先做網路調查再寫】請先用 web_search 工具搜尋（最多 3 次）下列資訊，再依結果寫腳本：
+1. 此商品/品類目前在 FB Reels / TikTok 上的**熱門 hook 用法、流行語**（含菲律賓在地用語）
+2. **季節性關鍵字**（例如此商品的銷售旺季、相關節日）
+3. 目前菲律賓社群熱用的 **hashtag 趨勢**（Tagalog 與英文皆可）
+搜尋時優先用菲律賓在地觀點（site:tiktok.com、Philippines, OFW, Pinoy 等關鍵字）。
+` : "";
+
+  return `你是 BINI Blooms（一家主打菲律賓客群的花店/禮盒品牌）的社群行銷文案專家。${styleBlock}${webBlock}
 請依照附上的商品照片與下列資訊，產出一支約 ${opts.seconds} 秒的「直式短影音」宣傳腳本，用於 Facebook Reels 與 TikTok，目標是帶動網路銷售。
 
 商品資訊：
@@ -161,15 +172,22 @@ async function main() {
   const imageBlocks = images.map(loadImageBlock);
   const style = loadStyleProfile();
 
-  console.log(`🧠 使用 ${MODEL} 分析 ${images.length} 張照片…${style ? "（已套用風格檔）" : ""}`);
+  const flags = [style ? "風格檔" : null, opts.web ? "網路搜尋" : null].filter(Boolean).join("、");
+  console.log(`🧠 使用 ${MODEL} 分析 ${images.length} 張照片${flags ? `（已啟用：${flags}）` : ""}…`);
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 2000,
+    max_tokens: 4000,
+    tools: opts.web ? [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] : undefined,
     messages: [{
       role: "user",
       content: [...imageBlocks, { type: "text", text: buildPrompt(opts, style) }],
     }],
   });
+
+  if (opts.web) {
+    const searches = resp.content.filter(b => b.type === "server_tool_use" && b.name === "web_search").length;
+    if (searches > 0) console.log(`🔎 已執行 ${searches} 次網路搜尋`);
+  }
 
   const text = resp.content.filter(b => b.type === "text").map(b => b.text).join("");
   let result;
