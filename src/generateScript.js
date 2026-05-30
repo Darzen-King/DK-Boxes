@@ -62,19 +62,34 @@ function parseArgs(argv) {
   return { images, opts };
 }
 
+function sniffMime(buf) {
+  if (buf.length < 12) return null;
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return "image/jpeg";
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return "image/png";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return "image/gif";
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+      && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return "image/webp";
+  return null;
+}
+
 function loadImageBlock(filePath) {
   if (!fs.existsSync(filePath)) {
     console.error(`找不到照片：${filePath}`);
     process.exit(1);
   }
+  const buf = fs.readFileSync(filePath);
+  const sniffed = sniffMime(buf);
   const ext = path.extname(filePath).toLowerCase();
-  const mediaType = MIME_BY_EXT[ext];
+  const fromExt = MIME_BY_EXT[ext];
+  const mediaType = sniffed || fromExt;
   if (!mediaType) {
-    console.error(`不支援的圖片格式：${ext}（支援 jpg/png/webp/gif）`);
+    console.error(`不支援的圖片格式：${filePath}（支援 jpg/png/webp/gif）`);
     process.exit(1);
   }
-  const data = fs.readFileSync(filePath).toString("base64");
-  return { type: "image", source: { type: "base64", media_type: mediaType, data } };
+  if (sniffed && fromExt && sniffed !== fromExt) {
+    console.warn(`⚠️  ${path.basename(filePath)} 副檔名是 ${ext} 但實際是 ${sniffed}，已自動修正`);
+  }
+  return { type: "image", source: { type: "base64", media_type: mediaType, data: buf.toString("base64") } };
 }
 
 function loadStyleProfile() {
