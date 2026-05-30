@@ -553,6 +553,8 @@ function updateTopTitle() {
   }
 }
 window.switchPage = function(pageId, btn) {
+  // 離開掃描頁時關閉相機釋放資源（避免電力消耗）
+  if (pageId !== 'scan' && typeof stopLiveScan === 'function') stopLiveScan();
   document.querySelectorAll('.page').forEach(p=>{ p.classList.remove('active'); p.scrollTop=0; });
   document.querySelectorAll('.bnav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+pageId).classList.add('active');
@@ -563,6 +565,7 @@ window.switchPage = function(pageId, btn) {
   if(pageId==='redeem')   loadRedeem();
   if(pageId==='announce') loadAnnouncements();
   if(pageId==='profile')  loadProfile();
+  if(pageId==='scan')     startLiveScan();
     if(pageId==='shop') {
       // shop.js 是 type=module，非同步載入，需等待掛載到 window
       const waitShop = (retry = 0) => {
@@ -780,7 +783,124 @@ async function loadExpiryInfo() {
   } catch(e) { console.error('expiryInfo:',e); }
 }
 
-// ── QR 掃描（高成功率版本）──
+// ── 即時相機掃描（A: BarcodeDetector + B: jsQR fallback）──
+let _scanStream = null, _scanRaf = null, _scanDetector = null, _scanCanvas = null;
+let _scanActive = false, _scanLastTry = 0, _scanDetectorInited = false;
+
+async function startLiveScan() {
+  if (_scanActive) return;
+  _scanActive = true;
+  const video = document.getElementById('scan-video');
+  const status = document.getElementById('scan-status');
+  const viewfinder = document.getElementById('scan-viewfinder');
+  const fallbackBtn = document.getElementById('scan-fallback-btn');
+  if (viewfinder) viewfinder.classList.remove('found');
+
+  // 1. 嘗試初始化 BarcodeDetector（Android Chrome / 較新瀏覽器有）
+  if (!_scanDetectorInited && 'BarcodeDetector' in window) {
+    _scanDetectorInited = true;
+    try {
+      const fmts = await window.BarcodeDetector.getSupportedFormats();
+      if (fmts.includes('qr_code')) {
+        _scanDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        console.log('[scan] 使用 BarcodeDetector');
+      }
+    } catch (e) { _scanDetector = null; }
+  }
+
+  // 2. 啟動相機
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('no_getUserMedia');
+    _scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    video.srcObject = _scanStream;
+    // iOS Safari 需要明確 play()，並用 catch 吞掉非致命錯誤
+    try { await video.play(); } catch (e) {}
+    if (status) status.innerHTML = `<span style="color:var(--brown)">📷 ${t('對準 QR Code，自動辨識中…','Aim at the QR Code…')}</span>`;
+    if (fallbackBtn) fallbackBtn.style.display = 'none';
+    _scanLastTry = 0;
+    scanLoop();
+  } catch (err) {
+    console.warn('getUserMedia failed:', err.name, err.message);
+    _scanActive = false;
+    const denied = ['NotAllowedError','PermissionDeniedError','SecurityError'].includes(err.name);
+    if (status) {
+      status.innerHTML = denied
+        ? `<span style="color:#c0392b">⚠️ ${t('相機權限未開啟','Camera permission denied')}</span><br><span style="font-size:12px;color:#888">${t('iOS：設定 → Safari → 相機 → 允許','iOS: Settings → Safari → Camera → Allow')}</span>`
+        : `<span style="color:#c0392b">⚠️ ${t('無法啟動相機，請改用拍照','Cannot start camera, use photo')}</span>`;
+    }
+    if (fallbackBtn) fallbackBtn.style.display = 'block';   // 顯示拍照備援
+  }
+}
+
+function stopLiveScan() {
+  _scanActive = false;
+  if (_scanRaf) { cancelAnimationFrame(_scanRaf); _scanRaf = null; }
+  if (_scanStream) {
+    _scanStream.getTracks().forEach(t => t.stop());
+    _scanStream = null;
+  }
+  const video = document.getElementById('scan-video');
+  if (video) { try { video.pause(); video.srcObject = null; } catch (e) {} }
+}
+
+async function scanLoop() {
+  if (!_scanActive) return;
+  const video = document.getElementById('scan-video');
+  if (!video || video.readyState < 2 || video.videoWidth === 0) {
+    _scanRaf = requestAnimationFrame(scanLoop); return;
+  }
+  // 節流：每 100ms 試一次（≈10 FPS）— 已經夠快又省電
+  const now = performance.now();
+  if (now - _scanLastTry < 100) { _scanRaf = requestAnimationFrame(scanLoop); return; }
+  _scanLastTry = now;
+
+  let result = null;
+  // 路徑 A：BarcodeDetector（快、準）
+  if (_scanDetector) {
+    try {
+      const codes = await _scanDetector.detect(video);
+      if (codes && codes.length) result = codes[0].rawValue;
+    } catch (e) { /* 偶發失敗，續試 jsQR */ }
+  }
+  // 路徑 B：jsQR fallback（iOS Safari、舊瀏覽器）
+  if (!result) {
+    try {
+      if (!_scanCanvas) _scanCanvas = document.createElement('canvas');
+      const vw = video.videoWidth, vh = video.videoHeight;
+      // 取畫面中央 ~72%（對應 viewfinder 的 scan-box）並縮到 400px 加速
+      const sx = vw * 0.14, sy = vh * 0.14, sw = vw * 0.72, sh = vh * 0.72;
+      const target = 400;
+      const scale = Math.min(1, target / Math.max(sw, sh));
+      _scanCanvas.width = Math.round(sw * scale);
+      _scanCanvas.height = Math.round(sh * scale);
+      const ctx = _scanCanvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, _scanCanvas.width, _scanCanvas.height);
+      const img = ctx.getImageData(0, 0, _scanCanvas.width, _scanCanvas.height);
+      let code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      if (!code) code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'onlyInvert' });
+      if (code) result = code.data;
+    } catch (e) { /* 偶發 */ }
+  }
+
+  if (result) {
+    // 找到！停止掃描、震動、動畫、處理結果
+    const viewfinder = document.getElementById('scan-viewfinder');
+    if (viewfinder) viewfinder.classList.add('found');
+    if (navigator.vibrate) { try { navigator.vibrate(80); } catch (e) {} }
+    stopLiveScan();
+    const status = document.getElementById('scan-status');
+    if (status) status.innerHTML = `<span style="color:#27ae60;font-weight:700">✅ ${t('辨識成功！','Recognized!')}</span>`;
+    try { await processQRScan(result); } catch (e) { console.error(e); }
+    return;
+  }
+
+  _scanRaf = requestAnimationFrame(scanLoop);
+}
+
+// 拍照備援（舊流程，相機失敗時使用）
 window.handleQRFile = async function(input) {
   const file = input.files[0]; if (!file) return;
   const statusEl  = document.getElementById('scan-status');
@@ -977,6 +1097,11 @@ function listenForPoints(token) {
 
 function showScanError(msg) {
   document.getElementById('scan-status').textContent=msg;
+  // 若仍停留在掃描頁，2.5 秒後自動重啟相機，方便使用者再試一次
+  setTimeout(() => {
+    const onScan = document.getElementById('page-scan')?.classList.contains('active');
+    if (onScan && typeof startLiveScan === 'function') startLiveScan();
+  }, 2500);
 }
 function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0) {
   document.getElementById('modal-icon').textContent=birthdayBonus?'🎂':'🎉';

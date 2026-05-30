@@ -278,15 +278,21 @@
         <span data-zh="掃描店員出示的 QR Code 即可集點" data-en="Scan the QR Code shown by staff to earn points">掃描店員出示的 QR Code 即可集點</span>
       </div>
 
-      <!-- 拍攝技巧 -->
-      <div style="background:var(--pale);border-radius:14px;padding:14px 16px;width:100%">
-        <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:8px" data-zh="📸 拍攝技巧（提高成功率）" data-en="📸 Tips for best results">📸 拍攝技巧（提高成功率）</div>
-        <div style="font-size:12px;color:var(--brown);line-height:2">
-          <div data-zh="✅ QR Code 置中，距離約 15～25 公分" data-en="✅ Center the QR Code, 15-25cm away">✅ QR Code 置中，距離約 15～25 公分</div>
-          <div data-zh="✅ 確保光線充足，避免陰影遮擋" data-en="✅ Good lighting, no shadows">✅ 確保光線充足，避免陰影遮擋</div>
-          <div data-zh="✅ 手機拿穩，畫面清晰不模糊" data-en="✅ Hold steady, keep image sharp">✅ 手機拿穩，畫面清晰不模糊</div>
-          <div data-zh="✅ 若失敗請稍微改變距離後重試" data-en="✅ If failed, slightly adjust distance">✅ 若失敗請稍微改變距離後重試</div>
+      <!-- 即時掃描相機畫面 -->
+      <div class="scan-viewfinder" id="scan-viewfinder">
+        <video id="scan-video" autoplay playsinline muted></video>
+        <div class="scan-box">
+          <span class="scan-corner tl"></span>
+          <span class="scan-corner tr"></span>
+          <span class="scan-corner bl"></span>
+          <span class="scan-corner br"></span>
         </div>
+        <div class="scan-laser"></div>
+      </div>
+
+      <!-- 狀態顯示 -->
+      <div id="scan-status-wrap" style="width:100%;min-height:42px;display:flex;align-items:center;justify-content:center">
+        <p id="scan-status" class="scan-status" style="text-align:center;width:100%;margin:0"></p>
       </div>
 
       <!-- 集點規則 -->
@@ -295,10 +301,9 @@
         <div id="tier-rules-display" style="font-size:12px;color:var(--brown);line-height:1.8"></div>
       </div>
 
-      <!-- 掃描按鈕 -->
-      <label for="qr-file-input" class="btn-primary" id="scan-btn-label" style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;width:100%">
-        <svg id="scan-icon" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
-        <span id="scan-btn-text" data-zh="開啟相機掃描" data-en="Open Camera">開啟相機掃描</span>
+      <!-- 拍照備援（相機權限被拒/無相機時才顯示） -->
+      <label for="qr-file-input" class="btn-outline" id="scan-fallback-btn" style="display:none;cursor:pointer;text-align:center;width:100%;padding:11px;border:1.5px solid var(--border);border-radius:12px;font-size:15px;color:var(--brown);font-weight:600">
+        <span data-zh="📷 改用拍照辨識" data-en="📷 Use Photo Instead">📷 改用拍照辨識</span>
       </label>
       <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display:none" onchange="handleQRFile(this)">
 
@@ -307,11 +312,6 @@
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
         <span data-zh="取消，返回首頁" data-en="Cancel, Back to Home">取消，返回首頁</span>
       </button>
-
-      <!-- 狀態顯示 -->
-      <div id="scan-status-wrap" style="width:100%;min-height:52px;display:flex;align-items:center;justify-content:center">
-        <p id="scan-status" class="scan-status" style="text-align:center;width:100%"></p>
-      </div>
     </div>
   </div>
 
