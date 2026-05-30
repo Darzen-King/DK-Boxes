@@ -400,9 +400,35 @@ window.handleShopInstall=async function(){
 };
 
 // ── 會員人數 ──
-async function loadMemberCount(){
-  try{ const snap=await getDocs(collection(db,'members')); document.getElementById('member-count').textContent=snap.size.toLocaleString(); }
-  catch(e){ console.error(e); }
+// 數字翻頁動畫：從目前顯示值漸進到目標值
+function animateNumber(el, to, opts = {}) {
+  if (!el || typeof to !== 'number' || !isFinite(to)) return;
+  const duration = opts.duration ?? 700;
+  const isInt = opts.isInt ?? Number.isInteger(to);
+  const format = (n) => isInt ? Math.round(n).toLocaleString() : (Math.round(n * 10) / 10).toFixed(1);
+  const from = parseFloat((el.textContent || '0').replace(/[^\d.-]/g, '')) || 0;
+  if (Math.abs(from - to) < 0.05) { el.textContent = format(to); return; }
+  if (el._animRaf) cancelAnimationFrame(el._animRaf);
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = format(from + (to - from) * eased);
+    if (t < 1) el._animRaf = requestAnimationFrame(tick);
+    else el._animRaf = null;
+  };
+  el._animRaf = requestAnimationFrame(tick);
+}
+
+// 即時監聽會員數：新會員註冊時 admin 端會立刻看到數字動畫往上跑
+let _memberCountUnsub = null;
+function loadMemberCount(){
+  if (_memberCountUnsub) _memberCountUnsub();
+  _memberCountUnsub = onSnapshot(
+    collection(db,'members'),
+    (snap) => animateNumber(document.getElementById('member-count'), snap.size, { isInt: true }),
+    (err) => console.error('memberCount listener:', err.message)
+  );
 }
 
 // ── QR 產生（新流程：只含 token，無金額）──
