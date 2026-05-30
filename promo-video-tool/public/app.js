@@ -14,6 +14,7 @@ let currentVideos = null;
 
 // 從後端傳來的 Phase label → 穩定 key（不受 UI 語言影響）
 const PHASE_KEY = {
+  "下載連結": "download",
   "Phase 1：腳本": "phase1",
   "Phase 2：旁白": "phase2",
   "Phase 3：影片": "phase3",
@@ -55,7 +56,9 @@ function renderPreview() {
 // ── 提交 ──────────────────────────────────────────────
 form.addEventListener("submit", async e => {
   e.preventDefault();
-  if (photoInput.files.length === 0) return alert(t("err_no_photo"));
+  const urlsField = form.elements["urls"];
+  const hasUrls = urlsField && urlsField.value.trim().length > 0;
+  if (photoInput.files.length === 0 && !hasUrls) return alert(t("err_no_photo"));
 
   const fd = new FormData(form);
   submitBtn.disabled = true;
@@ -95,6 +98,7 @@ function handleEvent(ev) {
     const key = PHASE_KEY[ev.data.label] || ev.data.label;
     const el = [...$$(".phase")].find(p => p.dataset.phase === key);
     if (!el) return;
+    el.hidden = false;
     el.classList.remove("running", "done", "error");
     if (ev.data.status === "start") el.classList.add("running");
     if (ev.data.status === "done") el.classList.add("done");

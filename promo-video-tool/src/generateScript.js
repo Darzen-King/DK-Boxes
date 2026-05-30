@@ -16,6 +16,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import "dotenv/config";
 import Anthropic from "@anthropic-ai/sdk";
+import { isUrl, downloadVideo } from "./ytdl.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -80,7 +81,14 @@ async function extractFrames(videoPath, count) {
 async function expandInputs(inputs, framesPerVideo) {
   const out = [];
   const fromVideo = [];
-  for (const p of inputs) {
+  const uploadsDir = path.resolve("uploads");
+  for (const raw of inputs) {
+    let p = raw;
+    if (isUrl(raw)) {
+      console.log(`🔗 yt-dlp 下載：${raw}`);
+      p = await downloadVideo(raw, uploadsDir, line => process.stdout.write(`   ${line}\n`));
+      console.log(`✅ 下載完成：${path.relative(process.cwd(), p)}`);
+    }
     if (!fs.existsSync(p)) { console.error(`找不到檔案：${p}`); process.exit(1); }
     if (isVideo(p)) {
       console.log(`🎞 從影片擷取 ${framesPerVideo} 個關鍵畫面：${path.basename(p)}`);

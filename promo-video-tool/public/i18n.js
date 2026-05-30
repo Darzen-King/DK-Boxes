@@ -10,6 +10,8 @@ const TRANSLATIONS = {
     dz_drag: "📷 拖曳照片或影片到這裡，或",
     dz_pick: "點此選擇",
     dz_hint: "照片：JPG/PNG/WebP/GIF　影片：MP4/MOV/WebM（自動擷取 6 個關鍵畫面餵給 AI）",
+    url_label: "🔗 或貼影片連結（FB / YouTube / TikTok / IG，會自動下載）",
+    url_placeholder: "https://www.facebook.com/share/v/...\nhttps://www.tiktok.com/@user/video/...",
 
     sec_info: "2️⃣ 商品資訊",
     f_name: "商品名稱",
@@ -34,6 +36,7 @@ const TRANSLATIONS = {
     submit_uploading: "上傳中…",
 
     progress_title: "製作進度",
+    phase0: "🔗 下載連結",
     phase1: "📝 Phase 1：腳本",
     phase2: "🎙 Phase 2：旁白",
     phase3: "🎬 Phase 3：影片",
@@ -69,6 +72,8 @@ const TRANSLATIONS = {
     dz_drag: "📷 Drop photos or video here, or",
     dz_pick: "click to choose",
     dz_hint: "Photos: JPG/PNG/WebP/GIF　Video: MP4/MOV/WebM (6 key frames will be auto-extracted for the AI)",
+    url_label: "🔗 Or paste a video link (FB / YouTube / TikTok / IG, auto-downloaded)",
+    url_placeholder: "https://www.facebook.com/share/v/...\nhttps://www.tiktok.com/@user/video/...",
 
     sec_info: "2️⃣ Product info",
     f_name: "Product name",
@@ -93,6 +98,7 @@ const TRANSLATIONS = {
     submit_uploading: "Uploading…",
 
     progress_title: "Progress",
+    phase0: "🔗 Download",
     phase1: "📝 Phase 1: Script",
     phase2: "🎙 Phase 2: Voiceover",
     phase3: "🎬 Phase 3: Video",

@@ -56,3 +56,4 @@
 - ✅ UI 中英切換（右上角，狀態存 localStorage）
 - ✅ 桌面捷徑：`start-bini.bat` 雙擊即跑，server 自動開瀏覽器
 - ✅ 影片輸入：上傳 MP4/MOV/WebM，ffmpeg 自動擷取 6 個關鍵畫面餵 Claude；Phase 3 直接用原始影片片段當畫面，AI 旁白疊上、原音壓 10% 當環境音、必要時循環
+- ✅ URL 輸入：UI 有「貼影片連結」欄，server / CLI 自動 yt-dlp 下載 FB/YT/TikTok/IG 公開影片再進 pipeline

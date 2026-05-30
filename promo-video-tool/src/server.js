@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import express from "express";
 import multer from "multer";
+import { isUrl, downloadVideo } from "./ytdl.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT = path.resolve(".");
@@ -81,6 +82,24 @@ function findLatestScriptJson() {
 // ── 啟動一個任務 ─────────────────────────────────────────────────────
 async function startJob(job, body) {
   try {
+    // 0. 先下載 URLs（若有）
+    const urls = (body.urls || "").split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+    for (const url of urls) {
+      if (!isUrl(url)) { emit(job, "log", `⚠️ 跳過非法連結：${url}`); continue; }
+      emit(job, "phase", { label: "下載連結", status: "start" });
+      emit(job, "log", `🔗 下載：${url}`);
+      try {
+        const dlPath = await downloadVideo(url, UPLOAD_DIR, line => emit(job, "log", `   ${line}`));
+        job.photos.push(dlPath);
+        emit(job, "log", `✅ 下載完成：${path.basename(dlPath)}`);
+        emit(job, "phase", { label: "下載連結", status: "done" });
+      } catch (e) {
+        emit(job, "phase", { label: "下載連結", status: "error" });
+        throw new Error(`下載失敗：${e.message}`);
+      }
+    }
+    if (job.photos.length === 0) throw new Error("沒有可用素材：請上傳照片/影片，或貼一條有效連結。");
+
     // Phase 1 參數
     const p1Args = [...job.photos];
     if (body.name) p1Args.push("--name", body.name);
@@ -138,7 +157,8 @@ app.post("/api/produce",
   upload.fields([{ name: "photos", maxCount: 10 }, { name: "music", maxCount: 1 }, { name: "logo", maxCount: 1 }]),
   (req, res) => {
     const photos = (req.files?.photos || []).map(f => f.path);
-    if (photos.length === 0) return res.status(400).json({ error: "至少要上傳 1 張照片" });
+    const hasUrls = (req.body.urls || "").split(/[\n,]/).map(s => s.trim()).filter(Boolean).length > 0;
+    if (photos.length === 0 && !hasUrls) return res.status(400).json({ error: "至少要上傳 1 張照片/影片，或貼一條連結" });
     const jobId = randomUUID();
     const job = {
       id: jobId, status: "running", photos,
