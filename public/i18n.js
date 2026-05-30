@@ -4,6 +4,7 @@ const TRANSLATIONS = {
   zh: {
     title: "🌸 BINI Blooms 宣傳影片產生器",
     subtitle: "照片 → 雙語腳本（英 + Tagalog）→ 旁白 → 9:16 直式 MP4，一鍵搞定",
+    help_link: "📖 使用說明",
 
     sec_photos: "1️⃣ 商品照片",
     dz_drag: "📷 拖曳照片到這裡，或",
@@ -62,6 +63,7 @@ const TRANSLATIONS = {
   en: {
     title: "🌸 BINI Blooms Promo Video Generator",
     subtitle: "Photos → bilingual script (EN + Tagalog) → voiceover → 9:16 MP4, in one click",
+    help_link: "📖 Help",
 
     sec_photos: "1️⃣ Product photos",
     dz_drag: "📷 Drop photos here, or",
