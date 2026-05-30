@@ -35,6 +35,27 @@ window.skeletonGrid = function(n = 4) {
   return h + '</div>';
 };
 
+// 數字翻頁動畫：從目前顯示值漸進到目標值（requestAnimationFrame + easeOutCubic）
+window.animateNumber = function(el, to, opts = {}) {
+  if (!el || typeof to !== 'number' || !isFinite(to)) return;
+  const duration = opts.duration ?? 700;
+  const isInt = opts.isInt ?? Number.isInteger(to);
+  const format = (n) => isInt ? Math.round(n).toLocaleString() : (Math.round(n * 10) / 10).toFixed(1);
+  const from = parseFloat((el.textContent || '0').replace(/[^\d.-]/g, '')) || 0;
+  if (Math.abs(from - to) < 0.05) { el.textContent = format(to); return; }
+  // 取消同元素上的舊動畫，避免兩個 RAF 互相覆蓋
+  if (el._animRaf) cancelAnimationFrame(el._animRaf);
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = format(from + (to - from) * eased);
+    if (t < 1) el._animRaf = requestAnimationFrame(tick);
+    else el._animRaf = null;
+  };
+  el._animRaf = requestAnimationFrame(tick);
+};
+
 // ── 會員等級設定 ──
 // VAPID Key 來自 Firebase Console → Project Settings → Cloud Messaging → 網路推播憑證
 // 截圖中可見的 Key（請確認完整 Key 後填入）
@@ -124,7 +145,7 @@ function renderTierRules() {
 
 // ── 狀態 ──
 let currentUser=null, memberData=null, confirmResult=null;
-let chatUnsub=null, lastDateLabel='';
+let chatUnsub=null, lastDateLabel='', memberDocUnsub=null;
 let pendingDeductPts=0, pendingReward=null, deferredInstall=null;
 let regPhone='', regName='', regBirthday='', regPassword='';
 
@@ -174,7 +195,7 @@ onAuthStateChanged(auth, async user => {
     const snap = await getDoc(doc(db,'members',user.uid));
     if (snap.exists()) {
       memberData = snap.data();
-      showApp(); loadHomeData(); checkUnread();
+      showApp(); loadHomeData(); checkUnread(); subscribeMemberData();
       // 推播權限判斷（iOS PWA 必須透過使用者手勢觸發）
       setTimeout(() => {
         const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
@@ -454,6 +475,7 @@ window.handleLogout = async function() {
   if (!confirm(t('確定要登出嗎？','Sign out?'))) return;
   if (chatUnsub) { chatUnsub(); chatUnsub=null; }
   if (notificationsUnsub) { notificationsUnsub(); notificationsUnsub=null; }
+  if (memberDocUnsub) { memberDocUnsub(); memberDocUnsub=null; }
   await signOut(auth);
 };
 
@@ -588,7 +610,7 @@ async function loadHomeData() {
     document.getElementById('hero-name').textContent  = memberData.name;
     document.getElementById('hero-id').textContent    = 'ID #'+currentUser.uid.slice(-6).toUpperCase();
     document.getElementById('hero-tier').textContent  = tier.icon+' '+(lang==='zh'?tier.name.zh:tier.name.en);
-    const _pts = memberData.points||0; document.getElementById('hero-pts').textContent = Number.isInteger(_pts)?_pts.toLocaleString():_pts.toFixed(1);
+    const _pts = memberData.points||0; window.animateNumber(document.getElementById('hero-pts'), _pts);
 
     // 載入即將過期的點數批次
     await loadExpiryInfo();
@@ -974,6 +996,21 @@ function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0
   document.getElementById('modal-overlay').style.display='flex';
 }
 
+// ── 會員資料即時監聽：點數變動立刻以動畫呈現 ──
+function subscribeMemberData() {
+  if (!currentUser) return;
+  if (memberDocUnsub) { memberDocUnsub(); memberDocUnsub = null; }
+  memberDocUnsub = onSnapshot(doc(db,'members',currentUser.uid), (snap) => {
+    if (!snap.exists()) return;
+    memberData = snap.data();
+    const pts = memberData.points || 0;
+    const heroEl = document.getElementById('hero-pts');
+    if (heroEl) window.animateNumber(heroEl, pts);
+    const redeemEl = document.getElementById('redeem-pts-avail');
+    if (redeemEl) window.animateNumber(redeemEl, pts);
+  }, (err) => console.warn('memberDoc listener:', err.message));
+}
+
 // ── 兌換頁 ──
 async function loadRedeem() {
   if(!currentUser) return;
@@ -982,7 +1019,7 @@ async function loadRedeem() {
   try {
     const snap=await getDoc(doc(db,'members',currentUser.uid)); if(snap.exists()) memberData=snap.data();
     const pts=memberData?.points||0;
-    document.getElementById('redeem-pts-avail').textContent=Number.isInteger(pts)?pts.toLocaleString():pts.toFixed(1);
+    window.animateNumber(document.getElementById('redeem-pts-avail'), pts);
     document.getElementById('deduct-preview').textContent='0'; document.getElementById('deduct-input').value='';
     const list=document.getElementById('rewards-list');
     const rSnap=await getDocs(collection(db,'rewards'));
@@ -1028,7 +1065,7 @@ window.confirmDeduct=async function(){
     // 優先扣除最快到期的點數批次
     await deductPointsByExpiry(pendingDeductPts);
     memberData.points-=pendingDeductPts;
-    const _rp=memberData.points; document.getElementById('redeem-pts-avail').textContent=Number.isInteger(_rp)?_rp.toLocaleString():_rp.toFixed(1);
+    const _rp=memberData.points; window.animateNumber(document.getElementById('redeem-pts-avail'), _rp);
     showModal('💰',t('折抵成功！','Discount Applied!'),`-${pendingDeductPts}`,`${t('已折抵','Deducted')} NT${pendingDeductPts.toLocaleString()}\n${t('剩餘','Remaining')} ${Number.isInteger(_rp)?_rp.toLocaleString():_rp.toFixed(1)} ${t('點','pts')}`,false);
     document.getElementById('deduct-input').value=''; document.getElementById('deduct-preview').textContent='0';
   } catch(e) { console.error(e); showToast(t('折抵失敗','Deduction failed')); }
