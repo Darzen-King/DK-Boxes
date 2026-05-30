@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🌸 BINI Blooms 宣傳影片產生器</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>🌸 BINI Blooms 宣傳影片產生器</h1>
+    <p class="subtitle">照片 → 雙語腳本（英 + Tagalog）→ 旁白 → 9:16 直式 MP4，一鍵搞定</p>
+  </header>
+
+  <main>
+    <section id="form-section">
+      <form id="produce-form">
+        <fieldset>
+          <legend>1️⃣ 商品照片</legend>
+          <div id="dropzone" class="dropzone">
+            <input type="file" id="photos" name="photos" accept="image/*" multiple required hidden>
+            <p>📷 拖曳照片到這裡，或 <button type="button" id="pick-photos">點此選擇</button></p>
+            <p class="hint">支援 JPG / PNG / WebP / GIF，最多 10 張。第一張會是主視覺。</p>
+            <div id="photo-preview" class="thumbs"></div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>2️⃣ 商品資訊</legend>
+          <label>商品名稱<input type="text" name="name" placeholder="永生玫瑰禮盒"></label>
+          <label>價格<input type="text" name="price" placeholder="NT$1280"></label>
+          <label>賣點 / 補充<textarea name="notes" rows="2" placeholder="情人節熱賣、可保存3年、附手寫卡片"></textarea></label>
+          <div class="row">
+            <label>影片秒數<input type="number" name="seconds" value="20" min="10" max="60"></label>
+            <label>語言版本
+              <select name="lang">
+                <option value="all">兩種都做（en + tl）</option>
+                <option value="en">只做英文</option>
+                <option value="tl">只做他加祿語</option>
+              </select>
+            </label>
+          </div>
+          <label class="checkbox"><input type="checkbox" name="web" value="true"> 啟用網路搜尋（讓 AI 抓趨勢/熱門 hashtag，多 ~$0.01–0.03）</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>3️⃣ 進階素材（選填）</legend>
+          <label>背景音樂（mp3/wav）<input type="file" name="music" accept="audio/*"></label>
+          <label>品牌 Logo（透明 PNG）<input type="file" name="logo" accept="image/png"></label>
+          <p class="hint">沒上傳時：自動找 <code>music/bgm.mp3</code> 與 <code>LOGO.png</code>，找不到就跳過。</p>
+        </fieldset>
+
+        <button type="submit" id="submit-btn">🚀 開始製作</button>
+      </form>
+    </section>
+
+    <section id="progress-section" hidden>
+      <h2>製作進度</h2>
+      <div id="phases" class="phases">
+        <div class="phase" data-phase="Phase 1：腳本">📝 Phase 1：腳本</div>
+        <div class="phase" data-phase="Phase 2：旁白">🎙 Phase 2：旁白</div>
+        <div class="phase" data-phase="Phase 3：影片">🎬 Phase 3：影片</div>
+      </div>
+      <pre id="log" class="log"></pre>
+    </section>
+
+    <section id="review-section" hidden>
+      <h2>📝 審稿閘門</h2>
+      <p>Phase 1 已完成。請檢查腳本，可直接編輯下方 JSON 後再繼續做語音與影片。</p>
+      <div id="review-preview" class="review-preview"></div>
+      <details>
+        <summary>進階：直接編輯原始 JSON（不熟悉 JSON 格式請勿改）</summary>
+        <textarea id="review-json" rows="20"></textarea>
+      </details>
+      <div class="actions">
+        <button id="approve-btn" type="button">✅ 接受、繼續做旁白 + 影片</button>
+        <button id="cancel-btn" type="button" class="secondary">取消</button>
+      </div>
+    </section>
+
+    <section id="done-section" hidden>
+      <h2>🎉 完成！</h2>
+      <div id="downloads" class="downloads"></div>
+      <button type="button" id="restart-btn">再做一支</button>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
