@@ -10,6 +10,14 @@ const logEl = $("#log");
 
 let currentJobId = null;
 let currentScript = null;
+let currentVideos = null;
+
+// 從後端傳來的 Phase label → 穩定 key（不受 UI 語言影響）
+const PHASE_KEY = {
+  "Phase 1：腳本": "phase1",
+  "Phase 2：旁白": "phase2",
+  "Phase 3：影片": "phase3",
+};
 
 // ── 照片拖曳 / 預覽 ─────────────────────────────────────
 $("#pick-photos").addEventListener("click", () => photoInput.click());
@@ -41,11 +49,11 @@ function renderPreview() {
 // ── 提交 ──────────────────────────────────────────────
 form.addEventListener("submit", async e => {
   e.preventDefault();
-  if (photoInput.files.length === 0) return alert("至少要上傳 1 張照片");
+  if (photoInput.files.length === 0) return alert(t("err_no_photo"));
 
   const fd = new FormData(form);
   submitBtn.disabled = true;
-  submitBtn.textContent = "上傳中…";
+  submitBtn.textContent = t("submit_uploading");
 
   try {
     const res = await fetch("/api/produce", { method: "POST", body: fd });
@@ -56,20 +64,17 @@ form.addEventListener("submit", async e => {
     $("#progress-section").hidden = false;
     connectStream(currentJobId);
   } catch (err) {
-    alert("錯誤：" + err.message);
+    alert(t("err_prefix") + err.message);
     submitBtn.disabled = false;
-    submitBtn.textContent = "🚀 開始製作";
+    submitBtn.textContent = t("submit");
   }
 });
 
 // ── SSE：即時進度 ────────────────────────────────────
 function connectStream(jobId) {
   const es = new EventSource(`/api/jobs/${jobId}/stream`);
-  es.onmessage = e => {
-    const ev = JSON.parse(e.data);
-    handleEvent(ev);
-  };
-  es.onerror = () => { /* 連線會自動重連 */ };
+  es.onmessage = e => handleEvent(JSON.parse(e.data));
+  es.onerror = () => { /* 自動重連 */ };
 }
 
 function appendLog(line) {
@@ -81,7 +86,8 @@ function handleEvent(ev) {
   if (ev.type === "log") {
     appendLog(ev.data);
   } else if (ev.type === "phase") {
-    const el = [...$$(".phase")].find(p => p.dataset.phase === ev.data.label);
+    const key = PHASE_KEY[ev.data.label] || ev.data.label;
+    const el = [...$$(".phase")].find(p => p.dataset.phase === key);
     if (!el) return;
     el.classList.remove("running", "done", "error");
     if (ev.data.status === "start") el.classList.add("running");
@@ -126,14 +132,14 @@ function editableSpan(text, onUpdate) {
 function renderReviewPreview(s) {
   const wrap = $("#review-preview");
   wrap.innerHTML = "";
-  wrap.appendChild(el("p", {}, `📸 ${s.product_summary || ""}`));
+  wrap.appendChild(el("p", {}, t("summary_prefix") + (s.product_summary || "")));
 
-  for (const [lang, label] of [["en", "🇬🇧 English"], ["tl", "🇵🇭 Tagalog"]]) {
+  for (const [lang, labelKey] of [["en", "lbl_english"], ["tl", "lbl_tagalog"]]) {
     const sc = s.scripts?.[lang];
     if (!sc) continue;
-    wrap.appendChild(el("h4", {}, label));
+    wrap.appendChild(el("h4", {}, t(labelKey)));
     const hookSpan = editableSpan(s.hook?.[lang], v => { s.hook[lang] = v; syncTextarea(s); });
-    wrap.appendChild(el("p", {}, "HOOK: ", hookSpan));
+    wrap.appendChild(el("p", {}, t("hook_label"), hookSpan));
     const ul = el("ul", { class: "lines" });
     (sc.lines || []).forEach((line, i) => {
       const li = el("li");
@@ -142,7 +148,7 @@ function renderReviewPreview(s) {
     });
     wrap.appendChild(ul);
     const ctaSpan = editableSpan(s.cta?.[lang], v => { s.cta[lang] = v; syncTextarea(s); });
-    wrap.appendChild(el("p", {}, "CTA: ", ctaSpan));
+    wrap.appendChild(el("p", {}, t("cta_label"), ctaSpan));
   }
 
   const tags = (s.hashtags || []).join(" ");
@@ -154,15 +160,14 @@ function syncTextarea(scriptObj) {
 }
 
 $("#approve-btn").addEventListener("click", async () => {
-  // 以 textarea 內容為準（覆蓋 inline 編輯）
   let scriptToSend = currentScript;
   try {
     scriptToSend = JSON.parse($("#review-json").value);
   } catch {
-    if (!confirm("進階 JSON 格式有誤，是否改用上面的可編輯預覽內容繼續？")) return;
+    if (!confirm(t("confirm_invalid_json"))) return;
   }
   $("#approve-btn").disabled = true;
-  $("#approve-btn").textContent = "已送出，繼續做語音與影片…";
+  $("#approve-btn").textContent = t("approve_sent");
   await fetch(`/api/jobs/${currentJobId}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -172,21 +177,33 @@ $("#approve-btn").addEventListener("click", async () => {
 });
 
 $("#cancel-btn").addEventListener("click", async () => {
-  if (!confirm("確定取消？")) return;
+  if (!confirm(t("confirm_cancel"))) return;
   await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
   location.reload();
 });
 
 // ── 完成畫面 ─────────────────────────────────────────
 function showDone(videos) {
+  currentVideos = videos;
   $("#done-section").hidden = false;
+  renderDownloads(videos);
+  $("#done-section").scrollIntoView({ behavior: "smooth" });
+}
+
+function renderDownloads(videos) {
   const dl = $("#downloads");
   dl.innerHTML = "";
   for (const v of videos) {
     const a = el("a", { href: `/output/${encodeURIComponent(v)}`, download: v }, `⬇ ${v}`);
     dl.appendChild(a);
   }
-  $("#done-section").scrollIntoView({ behavior: "smooth" });
 }
 
 $("#restart-btn").addEventListener("click", () => location.reload());
+
+// 切換語言時，重畫動態內容
+window.addEventListener("i18n:changed", () => {
+  if (currentScript) renderReviewPreview(currentScript);
+  if (currentVideos) renderDownloads(currentVideos);
+  if (!submitBtn.disabled) submitBtn.textContent = t("submit");
+});
