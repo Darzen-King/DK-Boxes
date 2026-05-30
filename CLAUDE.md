@@ -53,3 +53,5 @@
 - ✅ 一鍵流程（`src/produce.js`）：三個 Phase 串接，Phase 1 後跳審稿閘門讓使用者確認/修改腳本
 - ✅ 網路搜尋輔助（`generateScript.js --web`）：Claude 可選用 web_search 找趨勢/熱門 hashtag/季節梗
 - ✅ Phase 4：localhost UI（`src/server.js` + `public/`），`npm run ui` → 開 http://localhost:3000，店員拖曳上傳即可
+- ✅ UI 中英切換（右上角，狀態存 localStorage）
+- ✅ 桌面捷徑：`start-bini.bat` 雙擊即跑，server 自動開瀏覽器

@@ -183,7 +183,20 @@ app.post("/api/jobs/:id/cancel", (req, res) => {
   res.json({ ok: true });
 });
 
+function openBrowser(url) {
+  if (process.env.NO_AUTO_OPEN) return;
+  const cmd = process.platform === "win32" ? "cmd"
+            : process.platform === "darwin" ? "open"
+            : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  try {
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+    child.unref();
+  } catch { /* 開不起來就算了 */ }
+}
+
 app.listen(PORT, () => {
   console.log(`\n🌸 BINI Blooms 製作工具已啟動`);
   console.log(`   開瀏覽器 → http://localhost:${PORT}\n`);
+  openBrowser(`http://localhost:${PORT}`);
 });
