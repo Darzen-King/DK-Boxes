@@ -1,0 +1,13 @@
+# 參考影片連結清單 — 一行一個
+# 以 # 開頭的是註解，會被 yt-dlp 忽略
+#
+# 用法：yt-dlp -a urls.txt -o "transcripts/%(title).80s.%(ext)s"
+#
+# 支援平台：YouTube / Facebook / TikTok / Instagram / Twitter 等
+# YouTube 可額外加 --write-auto-sub --sub-lang "tl,en" --skip-download 直接抓字幕
+
+# ── 範例（用完請刪掉這幾行，換成你自己的）──
+https://www.facebook.com/share/v/1B2xrzN1R9/
+# https://www.youtube.com/watch?v=xxxxxxxxxxx
+# https://www.tiktok.com/@user/video/1234567890
+# https://www.instagram.com/reel/Cxxxxxxx/
