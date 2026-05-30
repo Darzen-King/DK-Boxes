@@ -195,8 +195,19 @@ function openBrowser(url) {
   } catch { /* 開不起來就算了 */ }
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🌸 BINI Blooms 製作工具已啟動`);
   console.log(`   開瀏覽器 → http://localhost:${PORT}\n`);
   openBrowser(`http://localhost:${PORT}`);
+});
+
+server.on("error", err => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`\n❌ Port ${PORT} 已被占用。`);
+    console.error(`   多半是上一次的服務還沒關。處理方式（擇一）：`);
+    console.error(`   1) 開瀏覽器 → http://localhost:${PORT}（很可能已經有工具在跑）`);
+    console.error(`   2) PowerShell 執行：Stop-Process -Name node -Force（殺掉殘留 node 後再重跑）\n`);
+    process.exit(1);
+  }
+  throw err;
 });
