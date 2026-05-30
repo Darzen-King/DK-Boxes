@@ -39,10 +39,16 @@ photoInput.addEventListener("change", renderPreview);
 function renderPreview() {
   preview.innerHTML = "";
   [...photoInput.files].forEach(f => {
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(f);
-    img.title = f.name;
-    preview.appendChild(img);
+    const isVid = f.type.startsWith("video/");
+    const node = document.createElement(isVid ? "video" : "img");
+    node.src = URL.createObjectURL(f);
+    node.title = f.name;
+    if (isVid) {
+      node.muted = true;
+      node.playsInline = true;
+      node.preload = "metadata";
+    }
+    preview.appendChild(node);
   });
 }
 

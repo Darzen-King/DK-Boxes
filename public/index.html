@@ -23,14 +23,14 @@
     <section id="form-section">
       <form id="produce-form">
         <fieldset>
-          <legend data-i18n="sec_photos">1️⃣ 商品照片</legend>
+          <legend data-i18n="sec_photos">1️⃣ 商品照片 / 影片</legend>
           <div id="dropzone" class="dropzone">
-            <input type="file" id="photos" name="photos" accept="image/*" multiple required hidden>
+            <input type="file" id="photos" name="photos" accept="image/*,video/*" multiple required hidden>
             <p>
-              <span data-i18n="dz_drag">📷 拖曳照片到這裡，或</span>
+              <span data-i18n="dz_drag">📷 拖曳照片或影片到這裡，或</span>
               <button type="button" id="pick-photos" data-i18n="dz_pick">點此選擇</button>
             </p>
-            <p class="hint" data-i18n="dz_hint">支援 JPG / PNG / WebP / GIF，最多 10 張。第一張會是主視覺。</p>
+            <p class="hint" data-i18n="dz_hint">照片：JPG/PNG/WebP/GIF　影片：MP4/MOV/WebM（會自動擷取 6 個關鍵畫面餵給 AI）</p>
             <div id="photo-preview" class="thumbs"></div>
           </div>
         </fieldset>
