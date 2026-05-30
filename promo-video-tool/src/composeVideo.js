@@ -48,6 +48,7 @@ BINI Blooms 宣傳影片工具 — Phase 3（影片合成）
   --logo <path>          浮水印 PNG（預設 LOGO.png 若存在）
   --no-music             明確不要背景音樂
   --no-logo              明確不要浮水印
+  --use-frames           上傳了影片時，強制改用擷取的畫面做 Ken Burns（而非原始影片片段）
 
 範例：
   node src/composeVideo.js
@@ -67,6 +68,7 @@ function parseArgs(argv) {
     else if (a === "--logo") opts.logo = argv[++i];
     else if (a === "--no-music") opts.noMusic = true;
     else if (a === "--no-logo") opts.noLogo = true;
+    else if (a === "--use-frames") opts.useFrames = true;
     else if (a === "--photos") {
       opts.photos = [];
       while (i + 1 < argv.length && !argv[i + 1].startsWith("--")) opts.photos.push(argv[++i]);
@@ -190,34 +192,95 @@ function buildFilter(photoCount, durSec, hasLogo, hasMusic, subsPath) {
   return slides.concat(chains).concat([audioChain]).join(";");
 }
 
-async function compose({ jsonPath, lang, opts }) {
-  const script = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-  const base = path.join(path.dirname(jsonPath), path.basename(jsonPath, ".json"));
+async function hasAudioStream(file) {
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "error", "-select_streams", "a:0",
+      "-show_entries", "stream=codec_type",
+      "-of", "default=noprint_wrappers=1:nokey=1", file,
+    ]);
+    return stdout.trim() === "audio";
+  } catch { return false; }
+}
 
-  const audioPath = `${base}-${lang}.mp3`;
-  if (!fs.existsSync(audioPath)) throw new Error(`找不到 ${lang} 音檔：${audioPath}（請先跑 synthesize.js）`);
+const AMBIENT_VOL = 0.10;   // 原始影片聲音壓到 10% 當環境音
 
-  const photos = (opts.photos && opts.photos.length)
-    ? opts.photos
-    : (script.meta?.images || []);
-  if (!photos.length) throw new Error("找不到照片，請用 --photos 指定");
-  for (const p of photos) if (!fs.existsSync(p)) throw new Error(`找不到照片：${p}`);
+// 以原始影片當畫面、AI 旁白疊在上面、原音壓低當環境音
+async function composeFromVideo({ videoSource, audioPath, durSec, subsPath, outPath, lang, opts }) {
+  const videoDur = await ffprobe(videoSource);
+  const needLoop = videoDur < durSec - 0.1;
+  const ambient = await hasAudioStream(videoSource);
+  const hasLogo = !!opts.logo;
+  const hasMusic = !!opts.music;
 
-  const lines = script.scripts?.[lang]?.lines;
-  if (!lines?.length) throw new Error(`腳本沒有 ${lang}.lines`);
+  // 輸入索引：0=video, 1=narration, 2=BGM(可選), 3=logo(可選)（依實際決定）
+  const args = ["-y", "-hide_banner", "-loglevel", "error"];
+  if (needLoop) args.push("-stream_loop", "-1");
+  args.push("-i", videoSource);
+  args.push("-i", audioPath);
+  let nextIdx = 2;
+  let musicIdx = -1, logoIdx = -1;
+  if (hasMusic) { args.push("-stream_loop", "-1", "-i", opts.music); musicIdx = nextIdx++; }
+  if (hasLogo)  { args.push("-i", opts.logo); logoIdx = nextIdx++; }
 
-  const durSec = await ffprobe(audioPath);
+  // ── 影像 ─────────────────────────────────────────
+  // 縮放裁切到 1080×1920、燒字幕、可選浮水印
+  const vChain = [];
+  vChain.push(
+    `[0:v]scale=${V.w}:${V.h}:force_original_aspect_ratio=increase,` +
+    `crop=${V.w}:${V.h},setsar=1,format=yuv420p,` +
+    `subtitles='${escapeFilterPath(subsPath)}'[vsub]`
+  );
+  let lastV = "vsub";
+  if (hasLogo) {
+    const lw = Math.round(V.w * LOGO_W_RATIO);
+    vChain.push(`[${logoIdx}:v]scale=${lw}:-1[logo]`);
+    vChain.push(`[${lastV}][logo]overlay=W-w-${LOGO_MARGIN}:${LOGO_MARGIN}[vout]`);
+  } else {
+    vChain.push(`[${lastV}]copy[vout]`);
+  }
 
-  // 寫字幕到暫存檔
-  const subsPath = `${base}-${lang}.ass`;
-  fs.writeFileSync(subsPath, buildAss(lines, durSec), "utf8");
+  // ── 音訊：旁白 + 原音壓低 +（可選）BGM ──────────
+  const aParts = [`[1:a]volume=${NARR_VOL}[narr]`];
+  const mixIns = ["[narr]"];
+  if (ambient) {
+    aParts.push(`[0:a]volume=${AMBIENT_VOL}[ambient]`);
+    mixIns.push("[ambient]");
+  }
+  if (hasMusic) {
+    aParts.push(`[${musicIdx}:a]volume=${BGM_VOL},aloop=loop=-1:size=2e9[bgmloop]`);
+    mixIns.push("[bgmloop]");
+  }
+  if (mixIns.length === 1) {
+    aParts.push(`[1:a]volume=${NARR_VOL}[aout]`);
+  } else {
+    aParts.push(`${mixIns.join("")}amix=inputs=${mixIns.length}:duration=first:dropout_transition=0[aout]`);
+  }
 
+  const filter = [...vChain, ...aParts].join(";");
+
+  args.push(
+    "-filter_complex", filter,
+    "-map", "[vout]", "-map", "[aout]",
+    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "20",
+    "-c:a", "aac", "-b:a", "192k",
+    "-r", String(V.fps),
+    "-t", durSec.toFixed(3),
+    "-movflags", "+faststart",
+    outPath,
+  );
+
+  console.log(`   ⏳ ffmpeg 合成 ${lang}（原始影片 ${videoDur.toFixed(1)}s，旁白 ${durSec.toFixed(1)}s${needLoop ? "，會循環影片" : ""}${ambient ? "，含原音環境" : ""}）…`);
+  await execFileAsync("ffmpeg", args, { maxBuffer: 100 * 1024 * 1024 });
+}
+
+// 以照片做 Ken Burns + 交叉淡入（原本的模式）
+async function composeFromPhotos({ photos, audioPath, durSec, subsPath, outPath, lang, opts }) {
   const hasLogo = !!opts.logo;
   const hasMusic = !!opts.music;
   const filter = buildFilter(photos.length, durSec, hasLogo, hasMusic, subsPath);
 
-  // ffmpeg 輸入：照片 ×N、narration、(BGM)、(logo)
-  const args = ["-y"];
+  const args = ["-y", "-hide_banner", "-loglevel", "error"];
   for (const p of photos) args.push("-loop", "1", "-t", String(durSec / photos.length + CROSSFADE), "-i", p);
   args.push("-i", audioPath);
   if (hasMusic) args.push("-stream_loop", "-1", "-i", opts.music);
@@ -229,19 +292,50 @@ async function compose({ jsonPath, lang, opts }) {
     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "20",
     "-c:a", "aac", "-b:a", "192k",
     "-r", String(V.fps), "-shortest", "-movflags", "+faststart",
+    outPath,
   );
 
-  const outPath = `${base}-${lang}.mp4`;
-  args.push(outPath);
-
   console.log(`   ⏳ ffmpeg 合成 ${lang}（${photos.length} 張照片，${durSec.toFixed(1)} 秒）…`);
+  await execFileAsync("ffmpeg", args, { maxBuffer: 100 * 1024 * 1024 });
+}
+
+async function compose({ jsonPath, lang, opts }) {
+  const script = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+  const base = path.join(path.dirname(jsonPath), path.basename(jsonPath, ".json"));
+
+  const audioPath = `${base}-${lang}.mp3`;
+  if (!fs.existsSync(audioPath)) throw new Error(`找不到 ${lang} 音檔：${audioPath}（請先跑 synthesize.js）`);
+
+  const lines = script.scripts?.[lang]?.lines;
+  if (!lines?.length) throw new Error(`腳本沒有 ${lang}.lines`);
+
+  const durSec = await ffprobe(audioPath);
+  const subsPath = `${base}-${lang}.ass`;
+  fs.writeFileSync(subsPath, buildAss(lines, durSec), "utf8");
+
+  const outPath = `${base}-${lang}.mp4`;
+
+  // 模式選擇：上傳了影片且使用者沒指定 --use-frames，就拿原始影片當畫面
+  const sourceVideo = !opts.useFrames && !opts.photos?.length && script.meta?.videos?.[0]?.source;
+  const useVideo = sourceVideo && fs.existsSync(sourceVideo);
+
   try {
-    await execFileAsync("ffmpeg", args, { maxBuffer: 50 * 1024 * 1024 });
+    if (useVideo) {
+      await composeFromVideo({ videoSource: sourceVideo, audioPath, durSec, subsPath, outPath, lang, opts });
+    } else {
+      const photos = (opts.photos && opts.photos.length)
+        ? opts.photos
+        : (script.meta?.images || []);
+      if (!photos.length) throw new Error("找不到照片，請用 --photos 指定");
+      for (const p of photos) if (!fs.existsSync(p)) throw new Error(`找不到照片：${p}`);
+      await composeFromPhotos({ photos, audioPath, durSec, subsPath, outPath, lang, opts });
+    }
   } catch (e) {
     if (e.code === "ENOENT") throw new Error("找不到 ffmpeg 指令。請先 `winget install Gyan.FFmpeg` 並重開終端機。");
     const tail = (e.stderr || "").split("\n").slice(-15).join("\n");
-    throw new Error(`ffmpeg 執行失敗：\n${tail}`);
+    throw new Error(`ffmpeg 執行失敗：\n${tail || e.message}`);
   }
+
   const sizeMb = (fs.statSync(outPath).size / 1024 / 1024).toFixed(1);
   console.log(`   ✅ ${path.basename(outPath)}（${sizeMb} MB）`);
   fs.unlinkSync(subsPath);
@@ -266,6 +360,11 @@ async function main() {
 
   const langs = opts.lang === "all" ? ["en", "tl"] : [opts.lang];
   console.log(`🎬 Phase 3：${path.relative(process.cwd(), jsonPath)}`);
+
+  // 偵測模式給使用者看
+  const script = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+  const hasVideoSrc = !opts.useFrames && !opts.photos?.length && script.meta?.videos?.[0]?.source && fs.existsSync(script.meta.videos[0].source);
+  console.log(`   mode = ${hasVideoSrc ? "📹 原始影片 + 旁白疊加" : "📷 照片 Ken Burns"}`);
   console.log(`   bgm  = ${opts.music ? path.relative(process.cwd(), opts.music) : "(無，純旁白)"}`);
   console.log(`   logo = ${opts.logo ? path.relative(process.cwd(), opts.logo) : "(無浮水印)"}`);
 
