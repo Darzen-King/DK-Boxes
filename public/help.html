@@ -51,6 +51,15 @@
         <li><strong>想讓黑色視窗自動縮小到工具列？</strong>　右鍵桌面捷徑 → 內容 → 「執行」改成「最小化」→ 確定</li>
       </ul>
 
+      <h3>🔗 可以直接貼影片連結嗎？</h3>
+      <p>可以。在上傳區下方有「貼影片連結」欄，支援 FB / YouTube / TikTok / Instagram 公開影片。
+      系統會自動用 yt-dlp 下載到本機再處理，不用先手動下載。</p>
+      <ul>
+        <li>需要先在電腦上裝過 yt-dlp（<code>winget install yt-dlp.yt-dlp</code>）</li>
+        <li>私人/需登入的影片：把瀏覽器 cookies 匯出後，設環境變數 <code>YTDLP_COOKIES</code> 指到 cookies.txt</li>
+        <li>一次可貼多條，一行一個</li>
+      </ul>
+
       <h3>🎞 可以上傳影片嗎？</h3>
       <p>可以。把 MP4/MOV/WebM 拖進虛線框就會自動處理：</p>
       <ol>
@@ -95,6 +104,15 @@
         <li>To use it again later, just double-click the desktop icon (nothing else needs reinstalling)</li>
         <li>If the first launch is slow (stuck at "Installing packages…"), that's normal — wait 1–2 minutes</li>
         <li><strong>Want the black window minimized automatically?</strong>　Right-click the desktop shortcut → Properties → set "Run" to "Minimized" → OK</li>
+      </ul>
+
+      <h3>🔗 Can I paste a video URL directly?</h3>
+      <p>Yes. Below the upload box there's a "paste video link" field that accepts FB / YouTube / TikTok / Instagram public videos.
+      The server uses yt-dlp to download it locally, no manual download needed.</p>
+      <ul>
+        <li>yt-dlp must be installed first (<code>winget install yt-dlp.yt-dlp</code>)</li>
+        <li>For private/login-required videos: export browser cookies and set env var <code>YTDLP_COOKIES</code> to the cookies.txt path</li>
+        <li>You can paste multiple URLs, one per line</li>
       </ul>
 
       <h3>🎞 Can I upload a video?</h3>

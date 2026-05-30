@@ -101,6 +101,14 @@ button.secondary { background: #aaa; }
   display: flex; flex-wrap: wrap; gap: 8px;
   margin-top: 12px; justify-content: center;
 }
+.url-input {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.url-input textarea {
+  font-family: "SF Mono", Consolas, monospace; font-size: 12px;
+}
+
 .thumbs img, .thumbs video {
   width: 80px; height: 80px; object-fit: cover;
   border-radius: 6px; border: 1px solid var(--border);

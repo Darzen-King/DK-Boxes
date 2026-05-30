@@ -25,13 +25,20 @@
         <fieldset>
           <legend data-i18n="sec_photos">1️⃣ 商品照片 / 影片</legend>
           <div id="dropzone" class="dropzone">
-            <input type="file" id="photos" name="photos" accept="image/*,video/*" multiple required hidden>
+            <input type="file" id="photos" name="photos" accept="image/*,video/*" multiple hidden>
             <p>
               <span data-i18n="dz_drag">📷 拖曳照片或影片到這裡，或</span>
               <button type="button" id="pick-photos" data-i18n="dz_pick">點此選擇</button>
             </p>
             <p class="hint" data-i18n="dz_hint">照片：JPG/PNG/WebP/GIF　影片：MP4/MOV/WebM（會自動擷取 6 個關鍵畫面餵給 AI）</p>
             <div id="photo-preview" class="thumbs"></div>
+          </div>
+          <div class="url-input">
+            <label>
+              <span data-i18n="url_label">🔗 或貼影片連結（FB / YouTube / TikTok / IG，會自動下載）</span>
+              <textarea name="urls" rows="2" data-i18n-placeholder="url_placeholder" placeholder="https://www.facebook.com/share/v/...
+https://www.tiktok.com/@user/video/..."></textarea>
+            </label>
           </div>
         </fieldset>
 
@@ -89,6 +96,7 @@
     <section id="progress-section" hidden>
       <h2 data-i18n="progress_title">製作進度</h2>
       <div id="phases" class="phases">
+        <div class="phase" data-phase="download" data-i18n="phase0" hidden>🔗 下載連結</div>
         <div class="phase" data-phase="phase1" data-i18n="phase1">📝 Phase 1：腳本</div>
         <div class="phase" data-phase="phase2" data-i18n="phase2">🎙 Phase 2：旁白</div>
         <div class="phase" data-phase="phase3" data-i18n="phase3">🎬 Phase 3：影片</div>
