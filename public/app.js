@@ -109,8 +109,13 @@ function handleEvent(ev) {
     showDone(ev.data.videos);
   } else if (ev.type === "error") {
     appendLog("❌ " + ev.data.message);
+    $("#progress-actions").hidden = false;
+    // 同時把審稿/完成區域藏起來，免得殘留
+    $("#review-section").hidden = true;
   }
 }
+
+$("#back-btn").addEventListener("click", () => location.reload());
 
 // ── 審稿閘門 ─────────────────────────────────────────
 function showReview(scriptObj) {

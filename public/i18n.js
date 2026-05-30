@@ -40,6 +40,7 @@ const TRANSLATIONS = {
     phase1: "📝 Phase 1：腳本",
     phase2: "🎙 Phase 2：旁白",
     phase3: "🎬 Phase 3：影片",
+    back_to_form: "↩ 返回首頁重試",
 
     review_title: "📝 審稿閘門",
     review_desc: "Phase 1 已完成。請檢查腳本，可直接點擊內文修改，或展開下方進階區編輯原始 JSON。",
@@ -102,6 +103,7 @@ const TRANSLATIONS = {
     phase1: "📝 Phase 1: Script",
     phase2: "🎙 Phase 2: Voiceover",
     phase3: "🎬 Phase 3: Video",
+    back_to_form: "↩ Back to form",
 
     review_title: "📝 Review gate",
     review_desc: "Phase 1 done. Review the script — click any line to edit inline, or expand the advanced panel to edit raw JSON.",
