@@ -3,16 +3,13 @@ chcp 65001 >nul
 title BINI Blooms 製作工具
 cd /d "%~dp0"
 
-REM 第二次自我啟動（最小化）後，直接跑服務並結束
-if "%~1"=="--run" goto :run
-
-REM ── 第一次啟動：可見視窗做初始檢查 ─────────────────
 echo.
 echo ════════════════════════════════════
 echo   🌸 BINI Blooms 宣傳影片製作工具
 echo ════════════════════════════════════
 echo.
 
+REM ── 環境檢查 ──────────────────────────────────────
 where node >nul 2>&1
 if errorlevel 1 (
   echo [錯誤] 找不到 Node.js
@@ -43,21 +40,18 @@ if not exist ".env" (
   timeout /t 5 >nul
 )
 
-echo 設定完成，啟動服務（視窗將自動最小化到工具列）…
-timeout /t 1 >nul
-
-REM 重新最小化啟動自己；結束目前可見視窗
-start "BINI Blooms 製作工具" /min cmd /c "%~dpnx0" --run
-exit /b 0
-
-:run
-echo.
 echo ──────────────────────────────────────
-echo  🌸 BINI Blooms 製作工具運行中
-echo  關掉這個視窗就會停止服務
+echo  🌸 製作工具運行中
+echo  瀏覽器將自動開啟 http://localhost:3000
+echo.
+echo  ⚠ 不要關掉這個視窗，要用完才能關
+echo    （可以把視窗縮到工具列繼續用瀏覽器）
 echo ──────────────────────────────────────
 echo.
+
+REM 啟動服務（npm run ui 會阻塞在這裡，視窗保持開啟）
 call npm run ui
+
 echo.
 echo 服務已停止。按任意鍵關閉視窗…
 pause >nul
