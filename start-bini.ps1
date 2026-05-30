@@ -17,6 +17,21 @@ function Fail($msg) {
   exit 1
 }
 
+function Minimize-Self {
+  # 用 Win32 ShowWindow API 把目前 PowerShell 視窗最小化
+  # 設 $env:NO_AUTO_MINIMIZE=1 可停用
+  if ($env:NO_AUTO_MINIMIZE) { return }
+  try {
+    if (-not ('AutoMin.Win' -as [type])) {
+      Add-Type -Name Win -Namespace AutoMin -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);'
+    }
+    $hwnd = (Get-Process -Id $PID).MainWindowHandle
+    if ($hwnd -ne [System.IntPtr]::Zero) {
+      [AutoMin.Win]::ShowWindow($hwnd, 6) | Out-Null  # 6 = SW_MINIMIZE
+    }
+  } catch { }
+}
+
 # 1. Node 是否裝好
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   Fail "找不到 Node.js。請先到 https://nodejs.org 下載安裝 LTS 版本。"
@@ -58,10 +73,13 @@ Write-Host "──────────────────────�
 Write-Host " 🌸 製作工具運行中"
 Write-Host " 瀏覽器將自動開啟 http://localhost:3000"
 Write-Host ""
-Write-Host " ⚠ 不要關掉這個視窗，要用完才能關"
-Write-Host "   （可以把視窗縮到工具列繼續用瀏覽器）"
+Write-Host " ⚠ 視窗將自動縮到工具列；要停止服務時點工具列圖示叫回來再關掉"
 Write-Host "──────────────────────────────────────"
 Write-Host ""
+
+# 啟動前 2 秒，讓使用者看見上述提示，然後最小化
+Start-Sleep -Seconds 2
+Minimize-Self
 
 # 啟動 server（阻塞）
 try {
