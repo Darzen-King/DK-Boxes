@@ -49,5 +49,5 @@
 - ✅ Phase 1：照片 → 雙語腳本（`src/generateScript.js`）
 - ✅ Phase 1.5：風格學習（`src/buildStyleProfile.js` + `style-profile.json` 自動套用）
 - ✅ Phase 2：腳本 → 旁白語音（`src/synthesize.js`，預設 edge-tts，可切 ElevenLabs）
-- ⏳ Phase 3：照片 + 音檔 + 字幕 → 9:16 直式 MP4（ffmpeg）
+- ✅ Phase 3：照片 + 音檔 + 字幕 → 9:16 直式 MP4（`src/composeVideo.js`，ffmpeg + Ken Burns + ASS 字幕 + Logo + BGM）
 - ⏳ Phase 4：包成 localhost 小工具 UI
