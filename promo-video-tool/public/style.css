@@ -101,9 +101,10 @@ button.secondary { background: #aaa; }
   display: flex; flex-wrap: wrap; gap: 8px;
   margin-top: 12px; justify-content: center;
 }
-.thumbs img {
+.thumbs img, .thumbs video {
   width: 80px; height: 80px; object-fit: cover;
   border-radius: 6px; border: 1px solid var(--border);
+  background: #000;
 }
 
 .phases { display: flex; gap: 8px; margin: 12px 0; }

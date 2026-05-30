@@ -51,6 +51,16 @@
         <li><strong>想讓黑色視窗自動縮小到工具列？</strong>　右鍵桌面捷徑 → 內容 → 「執行」改成「最小化」→ 確定</li>
       </ul>
 
+      <h3>🎞 可以上傳影片嗎？</h3>
+      <p>可以。把 MP4/MOV/WebM 拖進虛線框就會自動處理：</p>
+      <ol>
+        <li>系統用 ffmpeg 從影片<strong>等距擷取 6 張關鍵畫面</strong>給 AI</li>
+        <li>AI 理解整支影片在介紹什麼（含動作、情境、時間順序）</li>
+        <li>生出符合影片內容的雙語腳本</li>
+        <li>那 6 張畫面也會作為 Phase 3 的素材，做成 9:16 直式短片</li>
+      </ol>
+      <p>建議影片 ≤ 60 秒、檔案 ≤ 500 MB，畫質越清楚 AI 看得越準。</p>
+
       <h3>🔧 常見問題</h3>
       <ul>
         <li><strong>瀏覽器沒自動開？</strong>　手動開瀏覽器，網址列輸入 <code>http://localhost:3000</code></li>
@@ -86,6 +96,16 @@
         <li>If the first launch is slow (stuck at "Installing packages…"), that's normal — wait 1–2 minutes</li>
         <li><strong>Want the black window minimized automatically?</strong>　Right-click the desktop shortcut → Properties → set "Run" to "Minimized" → OK</li>
       </ul>
+
+      <h3>🎞 Can I upload a video?</h3>
+      <p>Yes. Drop an MP4/MOV/WebM into the dashed box and it'll be processed automatically:</p>
+      <ol>
+        <li>ffmpeg extracts <strong>6 evenly-spaced key frames</strong></li>
+        <li>The AI understands the video's content (action, scene, sequence)</li>
+        <li>It writes a bilingual script that fits the video's story</li>
+        <li>Those 6 frames also become the visuals for the Phase 3 9:16 promo</li>
+      </ol>
+      <p>Recommended: video ≤ 60s, file ≤ 500 MB. Clearer footage = sharper analysis.</p>
 
       <h3>🔧 Troubleshooting</h3>
       <ul>

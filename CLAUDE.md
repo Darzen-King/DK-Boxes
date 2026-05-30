@@ -55,3 +55,4 @@
 - ✅ Phase 4：localhost UI（`src/server.js` + `public/`），`npm run ui` → 開 http://localhost:3000，店員拖曳上傳即可
 - ✅ UI 中英切換（右上角，狀態存 localStorage）
 - ✅ 桌面捷徑：`start-bini.bat` 雙擊即跑，server 自動開瀏覽器
+- ✅ 影片輸入：上傳 MP4/MOV/WebM，ffmpeg 自動擷取 6 個關鍵畫面餵 Claude，Phase 3 也用這些畫面

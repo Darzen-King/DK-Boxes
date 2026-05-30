@@ -6,10 +6,10 @@ const TRANSLATIONS = {
     subtitle: "照片 → 雙語腳本（英 + Tagalog）→ 旁白 → 9:16 直式 MP4，一鍵搞定",
     help_link: "📖 使用說明",
 
-    sec_photos: "1️⃣ 商品照片",
-    dz_drag: "📷 拖曳照片到這裡，或",
+    sec_photos: "1️⃣ 商品照片 / 影片",
+    dz_drag: "📷 拖曳照片或影片到這裡，或",
     dz_pick: "點此選擇",
-    dz_hint: "支援 JPG / PNG / WebP / GIF，最多 10 張。第一張會是主視覺。",
+    dz_hint: "照片：JPG/PNG/WebP/GIF　影片：MP4/MOV/WebM（自動擷取 6 個關鍵畫面餵給 AI）",
 
     sec_info: "2️⃣ 商品資訊",
     f_name: "商品名稱",
@@ -65,10 +65,10 @@ const TRANSLATIONS = {
     subtitle: "Photos → bilingual script (EN + Tagalog) → voiceover → 9:16 MP4, in one click",
     help_link: "📖 Help",
 
-    sec_photos: "1️⃣ Product photos",
-    dz_drag: "📷 Drop photos here, or",
+    sec_photos: "1️⃣ Product photos or video",
+    dz_drag: "📷 Drop photos or video here, or",
     dz_pick: "click to choose",
-    dz_hint: "JPG / PNG / WebP / GIF, up to 10. The first one is the hero shot.",
+    dz_hint: "Photos: JPG/PNG/WebP/GIF　Video: MP4/MOV/WebM (6 key frames will be auto-extracted for the AI)",
 
     sec_info: "2️⃣ Product info",
     f_name: "Product name",

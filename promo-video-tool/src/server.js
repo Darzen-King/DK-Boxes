@@ -34,7 +34,7 @@ const upload = multer({
       cb(null, `${Date.now()}-${randomUUID().slice(0, 8)}-${safe}`);
     },
   }),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 },   // 500MB（允許影片）
 });
 
 // ── 任務狀態：記憶體即可（單機單使用者）───────────────────────────────
