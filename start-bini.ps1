@@ -1,4 +1,4 @@
-# BINI Blooms 製作工具 — PowerShell 啟動腳本
+﻿# BINI Blooms 製作工具 — PowerShell 啟動腳本
 # 由 start-bini.bat 呼叫；錯誤時視窗不會自動關閉
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
