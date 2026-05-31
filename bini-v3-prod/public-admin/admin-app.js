@@ -965,6 +965,55 @@ function getAdminFunctions() {
   return _functions;
 }
 
+// 手動觸發今日生日推播（推廣分頁按鈕）。
+// 排程每天 08:00 自動執行，但若會員在 08:00 之後才註冊、或上次推播失敗（NotRegistered），
+// 用此按鈕可立即補發。
+window.triggerBirthdayNow = async function() {
+  const btn = document.getElementById('btn-trigger-birthday');
+  const msgEl = document.getElementById('birthday-trigger-msg');
+  const confirmTxt = shopLang === 'zh'
+    ? '確定要立即發送今日所有生日會員的推播嗎？\n（重複按會重複發送）'
+    : "Send today's birthday push to all matched members now?\n(Re-clicking will resend)";
+  if (!confirm(confirmTxt)) return;
+
+  if (btn) {
+    btn.disabled = true;
+    const span = btn.querySelector('span');
+    if (span) span.textContent = shopLang === 'zh' ? '發送中…' : 'Sending…';
+  }
+  if (msgEl) { msgEl.style.color = '#888'; msgEl.textContent = ''; }
+
+  try {
+    // 生日推播函式部署在 us-central1，需明確指定
+    const fns = getFunctions(auth.app, 'us-central1');
+    const r = await httpsCallable(fns, 'adminTriggerBirthdayGreeting')();
+    const d = r?.data || {};
+    if (msgEl) {
+      if (!d.matched) {
+        msgEl.style.color = '#888';
+        msgEl.textContent = shopLang === 'zh' ? '今日無生日會員' : 'No member with birthday today';
+      } else {
+        msgEl.style.color = '#2d8a4e';
+        msgEl.textContent = shopLang === 'zh'
+          ? `✅ 對 ${d.matched} 位生日會員送出推播（成功 ${d.sent}）`
+          : `✅ Sent to ${d.matched} birthday member(s) (success: ${d.sent})`;
+      }
+    }
+  } catch (e) {
+    console.error('triggerBirthdayNow:', e);
+    if (msgEl) {
+      msgEl.style.color = '#c0392b';
+      msgEl.textContent = `❌ ${e.message || e.code || (shopLang==='zh'?'發送失敗':'Send failed')}`;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      const span = btn.querySelector('span');
+      if (span) span.textContent = shopLang === 'zh' ? '🎂 立即發送今日生日推播' : "🎂 Send Today's Birthday Push Now";
+    }
+  }
+};
+
 async function sendPushToAll(title, body, type='announcement', url='/') {
   try {
     // 寫入 notifications → Cloud Function 觸發推播

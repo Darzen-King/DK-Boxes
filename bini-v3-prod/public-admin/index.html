@@ -425,6 +425,18 @@ input:focus,textarea:focus{border-color:var(--pink)}
       <p style="font-size:12px;color:#888;text-align:center;line-height:1.7;padding:0 8px">
         <span data-zh="💡 在手機上長按 QR 圖即可儲存或分享給客人。" data-en="💡 Long-press any QR on mobile to save or share with customers.">💡 在手機上長按 QR 圖即可儲存或分享給客人。</span>
       </p>
+
+      <!-- 生日推播手動觸發（補發/測試用） -->
+      <div class="card">
+        <div class="card-title"><span data-zh="🎂 生日推播工具" data-en="🎂 Birthday Push Tool">🎂 生日推播工具</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px;line-height:1.6">
+          <span data-zh="每日台北時間 08:00 自動發送給當天生日的會員。若會員 08:00 之後才註冊、或上次推播失敗，可用此鈕手動補發。" data-en="Auto-sent at 08:00 Taipei daily to members whose birthday is today. Use this button to resend if a member registered after 08:00 or the previous push failed.">每日台北時間 08:00 自動發送給當天生日的會員。若會員 08:00 之後才註冊、或上次推播失敗，可用此鈕手動補發。</span>
+        </p>
+        <button class="btn btn-outline" id="btn-trigger-birthday" onclick="triggerBirthdayNow()" style="width:100%">
+          <span data-zh="🎂 立即發送今日生日推播" data-en="🎂 Send Today's Birthday Push Now">🎂 立即發送今日生日推播</span>
+        </button>
+        <div id="birthday-trigger-msg" style="margin-top:8px;font-size:13px;text-align:center;color:#888"></div>
+      </div>
     </div>
   </div>
 

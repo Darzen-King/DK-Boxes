@@ -979,35 +979,51 @@ exports.scheduledPointsExpiry = onSchedule(
 
 // ── 每日生日推播：當天生日的會員收到祝賀 + 雙倍點提醒 ──────────
 // 生日當天消費集點本來就會自動加倍（見店家端 confirmAmount），這裡只負責主動提醒。
-exports.scheduledBirthdayGreeting = onSchedule(
-  { schedule: "every day 08:00", timeZone: "Asia/Taipei", region: "us-central1" },
-  async () => {
-    // 台北時區「今天」的月、日（與店家端 isTodayBirthday 判斷一致）
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-    const tMonth = parts.find(x => x.type === "month")?.value;
-    const tDay = parts.find(x => x.type === "day")?.value;
-    if (!tMonth || !tDay) return;
+async function runBirthdayGreeting() {
+  // 台北時區「今天」的月、日（與店家端 isTodayBirthday 判斷一致）
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const tMonth = parts.find(x => x.type === "month")?.value;
+  const tDay = parts.find(x => x.type === "day")?.value;
+  if (!tMonth || !tDay) return { sent: 0, matched: 0 };
 
-    const snap = await db.collection("members").get();
-    let count = 0;
-    for (const doc of snap.docs) {
-      const bday = doc.data().birthday;
-      if (!bday || typeof bday !== "string") continue;
-      const p = bday.split("-");
-      if (p.length < 3) continue;
-      if (p[1].padStart(2, "0") === tMonth && p[2].padStart(2, "0") === tDay) {
-        try {
-          await sendPush(doc.id, "🎂 Happy Birthday! | 生日快樂",
-            "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！");
-          count++;
-        } catch (e) {
-          console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
-        }
+  const snap = await db.collection("members").get();
+  let sent = 0, matched = 0;
+  for (const doc of snap.docs) {
+    const bday = doc.data().birthday;
+    if (!bday || typeof bday !== "string") continue;
+    const p = bday.split("-");
+    if (p.length < 3) continue;
+    if (p[1].padStart(2, "0") === tMonth && p[2].padStart(2, "0") === tDay) {
+      matched++;
+      try {
+        await sendPush(doc.id, "🎂 Happy Birthday! | 生日快樂",
+          "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！");
+        sent++;
+      } catch (e) {
+        console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
       }
     }
-    console.log(`[birthday] 生日推播完成，共 ${count} 位`);
   }
+  console.log(`[birthday] 推播完成，符合生日 ${matched} 位，送出 ${sent} 位`);
+  return { sent, matched };
+}
+
+exports.scheduledBirthdayGreeting = onSchedule(
+  { schedule: "every day 08:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => { await runBirthdayGreeting(); }
 );
+
+// 店家手動觸發：補發或測試「今天」的生日推播（每日 08:00 之外的時段也可送）
+exports.adminTriggerBirthdayGreeting = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  // 僅 admin 可呼叫
+  const adminSnap = await db.collection("admins").doc(request.auth.uid).get();
+  if (!adminSnap.exists || adminSnap.data().disabled === true) {
+    throw new HttpsError("permission-denied", "非管理員");
+  }
+  const result = await runBirthdayGreeting();
+  return { success: true, ...result };
+});
 
 // ── Firestore Trigger：notifications 新文件 → 自動推播 ──────────
 exports.onNotificationCreated = onDocumentCreated(
