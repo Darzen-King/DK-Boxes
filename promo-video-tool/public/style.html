@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎨 風格設定 — BINI Blooms</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <a href="/" class="help-link" title="返回主畫面">
+      <span data-i18n="back_to_main">← 返回主畫面</span>
+    </a>
+    <div class="lang-switch">
+      <button type="button" data-set-lang="zh">中文</button>
+      <button type="button" data-set-lang="en">English</button>
+    </div>
+    <h1 data-i18n="style_title">🎨 風格設定</h1>
+    <p class="subtitle" data-i18n="style_subtitle">餵參考影片，讓 AI 模仿你想要的語氣與用詞</p>
+  </header>
+
+  <main>
+    <section id="status-section">
+      <h2 data-i18n="style_status_title">📊 目前狀態</h2>
+      <div id="status-card" class="status-card">
+        <span data-i18n="loading">載入中…</span>
+      </div>
+    </section>
+
+    <section id="form-section">
+      <form id="style-form">
+        <fieldset>
+          <legend data-i18n="style_sec_urls">1️⃣ 參考影片連結</legend>
+          <label>
+            <span data-i18n="style_urls_label">貼影片連結（FB / YouTube / TikTok / IG，一行一條）</span>
+            <textarea name="urls" rows="8" required data-i18n-placeholder="style_urls_placeholder" placeholder="https://www.facebook.com/share/v/...
+https://www.tiktok.com/@user/video/...
+https://www.youtube.com/watch?v=..."></textarea>
+          </label>
+          <p class="hint" data-i18n="style_urls_hint">建議 15–30 支同類風格的影片；越多越穩定，但越花時間（Whisper 是 CPU 跑的，每分鐘影片約 1–2 分鐘）</p>
+        </fieldset>
+
+        <fieldset>
+          <legend data-i18n="style_sec_opts">2️⃣ 轉文字選項</legend>
+          <div class="row">
+            <label>
+              <span data-i18n="style_model">Whisper 模型</span>
+              <select name="model">
+                <option value="tiny">tiny — 最快（品質普通）</option>
+                <option value="small" selected>small — 平衡（推薦）</option>
+                <option value="medium">medium — 較準（吃 5GB 記憶體）</option>
+              </select>
+            </label>
+            <label>
+              <span data-i18n="style_lang">影片主要語言</span>
+              <select name="language">
+                <option value="Tagalog" selected>Tagalog（含英文夾雜）</option>
+                <option value="English">English</option>
+                <option value="Chinese">中文</option>
+                <option value="auto">自動偵測</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <button type="submit" id="submit-btn" data-i18n="style_submit">🚀 下載 + 轉文字 + 建風格檔</button>
+
+        <p class="hint" data-i18n="style_prereq" data-i18n-html="style_prereq">
+          ⚠️ 需要先安裝 <code>yt-dlp</code>、<code>ffmpeg</code> 與 <code>openai-whisper</code>（一次性）。指令見 <a href="/help.html" target="_blank">使用說明</a>。
+        </p>
+      </form>
+    </section>
+
+    <section id="progress-section" hidden>
+      <h2 data-i18n="progress_title">製作進度</h2>
+      <div id="phases" class="phases">
+        <div class="phase" data-phase="下載連結" data-i18n="style_phase1">🔗 下載連結</div>
+        <div class="phase" data-phase="Whisper 轉文字" data-i18n="style_phase2">🎙 Whisper 轉文字</div>
+        <div class="phase" data-phase="Claude 分析" data-i18n="style_phase3">🧠 Claude 分析</div>
+      </div>
+      <pre id="log" class="log"></pre>
+      <div id="progress-actions" class="actions" hidden>
+        <button id="back-btn" type="button" class="secondary" data-i18n="back_to_form">↩ 返回重試</button>
+      </div>
+    </section>
+
+    <section id="done-section" hidden>
+      <h2 data-i18n="style_done_title">🎉 風格檔已建立！</h2>
+      <p data-i18n="style_done_desc">下次製作影片時，AI 會自動套用這個口吻。可以回主畫面試做一支看效果。</p>
+      <div id="done-detail" class="status-card"></div>
+      <div class="actions">
+        <button type="button" id="goto-main" data-i18n="goto_main">前往主畫面製作影片</button>
+        <button type="button" id="restart-btn" class="secondary" data-i18n="restart_style">重新建立</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/i18n.js"></script>
+  <script src="/style-app.js"></script>
+</body>
+</html>
