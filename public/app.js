@@ -224,4 +224,24 @@ window.addEventListener("i18n:changed", () => {
   if (currentScript) renderReviewPreview(currentScript);
   if (currentVideos) renderDownloads(currentVideos);
   if (!submitBtn.disabled) submitBtn.textContent = t("submit");
+  loadStyleBadge();
 });
+
+// 主頁標頭的「風格檔已啟用」狀態提示
+async function loadStyleBadge() {
+  try {
+    const res = await fetch("/api/style/status");
+    const data = await res.json();
+    const badge = $("#style-status-badge");
+    if (!badge) return;
+    if (data.exists) {
+      const n = (data.sources || []).length;
+      badge.innerHTML = `🎨 ${t("badge_style_on").replace("{n}", n)} <a href="/style.html">${t("badge_change")}</a>`;
+      badge.hidden = false;
+    } else {
+      badge.innerHTML = `⚪ ${t("badge_style_off")} <a href="/style.html">${t("badge_setup")}</a>`;
+      badge.hidden = false;
+    }
+  } catch {}
+}
+document.addEventListener("DOMContentLoaded", loadStyleBadge);

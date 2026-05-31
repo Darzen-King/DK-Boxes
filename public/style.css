@@ -33,6 +33,24 @@ header h1 { margin: 0; font-size: 28px; color: var(--accent-dark); }
   color: var(--accent-dark); text-decoration: none; font-weight: 500;
 }
 .help-link:hover { background: rgba(255,255,255,0.85); }
+.help-link-2 { left: 130px; }
+
+.style-status-badge {
+  display: inline-block;
+  margin-top: 12px; padding: 6px 14px;
+  background: rgba(255,255,255,0.55); border-radius: 999px;
+  font-size: 13px; color: #6a4c43;
+}
+.style-status-badge a { color: var(--accent-dark); text-decoration: none; margin-left: 8px; font-weight: 500; }
+.style-status-badge a:hover { text-decoration: underline; }
+
+.status-card {
+  background: #fdf8f3; border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px;
+  font-size: 14px; line-height: 1.6;
+}
+.status-card details summary { cursor: pointer; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.status-card details { margin-top: 6px; }
 
 .lang-switch {
   position: absolute; top: 14px; right: 14px;

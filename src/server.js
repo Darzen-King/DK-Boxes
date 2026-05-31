@@ -24,8 +24,10 @@ const ROOT = path.resolve(".");
 const UPLOAD_DIR = path.join(ROOT, "uploads");
 const OUTPUT_DIR = path.join(ROOT, "output");
 const PUBLIC_DIR = path.join(ROOT, "public");
+const TRANSCRIPTS_DIR = path.join(ROOT, "transcripts");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+fs.mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -152,6 +154,118 @@ const app = express();
 app.use(express.json({ limit: "5mb" }));
 app.use(express.static(PUBLIC_DIR));
 app.use("/output", express.static(OUTPUT_DIR));
+
+// ── 風格檔 API ─────────────────────────────────────────
+app.get("/api/style/status", (_req, res) => {
+  const p = path.resolve("style-profile.json");
+  if (!fs.existsSync(p)) return res.json({ exists: false });
+  try {
+    const profile = JSON.parse(fs.readFileSync(p, "utf8"));
+    res.json({
+      exists: true,
+      sources: profile.meta?.sources || [],
+      tone: profile.tone || "",
+      createdAt: profile.meta?.createdAt || "",
+    });
+  } catch (e) {
+    res.json({ exists: false, error: e.message });
+  }
+});
+
+function whisperTranscribe(job, videoPath, model, language) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      videoPath,
+      "--model", model,
+      "--output_format", "txt",
+      "--output_dir", TRANSCRIPTS_DIR,
+      "--verbose", "False",
+    ];
+    if (language && language !== "auto") args.push("--language", language);
+    let child;
+    try {
+      child = spawn("whisper", args);
+    } catch (e) {
+      if (e.code === "ENOENT") return reject(new Error("找不到 whisper 指令。請先安裝：pip install -U openai-whisper"));
+      return reject(e);
+    }
+    child.stdout.on("data", b => emit(job, "log", `   ${b.toString("utf8").trim()}`));
+    child.stderr.on("data", b => emit(job, "log", `   ${b.toString("utf8").trim()}`));
+    child.on("error", err => {
+      if (err.code === "ENOENT") reject(new Error("找不到 whisper 指令。請先安裝：pip install -U openai-whisper"));
+      else reject(err);
+    });
+    child.on("close", code => code === 0 ? resolve() : reject(new Error(`whisper exit ${code}`)));
+  });
+}
+
+async function buildStyleJob(job, urls, model, language) {
+  try {
+    // Phase A：下載每條 URL
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      const label = `下載 (${i + 1}/${urls.length})`;
+      emit(job, "phase", { label: "下載連結", status: "start" });
+      emit(job, "log", `🔗 ${label}：${url}`);
+      try {
+        const dlPath = await downloadVideo(url, UPLOAD_DIR, line => emit(job, "log", `   ${line}`));
+        job.videos.push(dlPath);
+        emit(job, "log", `   ✅ ${path.basename(dlPath)}`);
+      } catch (e) {
+        emit(job, "log", `   ⚠️ 跳過：${e.message}`);
+      }
+    }
+    emit(job, "phase", { label: "下載連結", status: "done" });
+    if (job.videos.length === 0) throw new Error("沒有任何影片下載成功");
+
+    // Phase B：Whisper 逐字稿
+    emit(job, "phase", { label: "Whisper 轉文字", status: "start" });
+    for (let i = 0; i < job.videos.length; i++) {
+      const video = job.videos[i];
+      emit(job, "log", `🎙 轉文字 (${i + 1}/${job.videos.length})：${path.basename(video)}`);
+      try {
+        await whisperTranscribe(job, video, model, language);
+        emit(job, "log", `   ✅ 完成`);
+      } catch (e) {
+        emit(job, "log", `   ⚠️ 跳過：${e.message}`);
+      }
+    }
+    emit(job, "phase", { label: "Whisper 轉文字", status: "done" });
+
+    // Phase C：Claude 濃縮成風格檔
+    await runPhase(job, "Claude 分析", path.join(ROOT, "src/buildStyleProfile.js"), []);
+
+    // 回報結果
+    const p = path.resolve("style-profile.json");
+    if (!fs.existsSync(p)) throw new Error("buildStyleProfile.js 沒輸出 style-profile.json");
+    const profile = JSON.parse(fs.readFileSync(p, "utf8"));
+    emit(job, "done", {
+      sources: profile.meta?.sources?.length || 0,
+      tone: profile.tone || "",
+      createdAt: profile.meta?.createdAt || "",
+    });
+    job.status = "done";
+  } catch (err) {
+    emit(job, "error", { message: err.message });
+    job.status = "error";
+  }
+}
+
+app.post("/api/style/build", express.json({ limit: "1mb" }), (req, res) => {
+  const urls = (req.body.urls || "").split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  const model = req.body.model || "small";
+  const language = req.body.language || "Tagalog";
+  if (urls.length === 0) return res.status(400).json({ error: "至少要一條影片連結" });
+
+  const jobId = randomUUID();
+  const job = {
+    id: jobId, status: "running", videos: [],
+    events: [], listeners: new Set(),
+  };
+  jobs.set(jobId, job);
+  buildStyleJob(job, urls, model, language);
+  res.json({ jobId });
+});
 
 app.post("/api/produce",
   upload.any(),   // 接受任何欄位名，下面手動分流；比 .fields() 嚴格白名單穩定
