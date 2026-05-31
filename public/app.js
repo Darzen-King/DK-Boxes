@@ -66,8 +66,11 @@ form.addEventListener("submit", async e => {
 
   try {
     const res = await fetch("/api/produce", { method: "POST", body: fd });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "啟動失敗");
+    const raw = await res.text();
+    let json;
+    try { json = JSON.parse(raw); }
+    catch { throw new Error(`伺服器回應非 JSON (HTTP ${res.status})：${raw.slice(0, 200)}`); }
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
     currentJobId = json.jobId;
     $("#form-section").hidden = true;
     $("#progress-section").hidden = false;
