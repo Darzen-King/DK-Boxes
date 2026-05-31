@@ -5,7 +5,7 @@
 
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule }                    = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated }             = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineString, defineBoolean }   = require("firebase-functions/params");
 const admin  = require("firebase-admin");
 // Node 22 內建 fetch，不需要 node-fetch
@@ -49,7 +49,7 @@ const STALE_FCM_CODES = new Set([
 async function sendPush(uid, title, body, data = {}) {
   try {
     const snap = await db.collection("push_tokens").doc(uid).get();
-    if (!snap.exists) return;
+    if (!snap.exists) return { success: false, sent: 0, failed: 0 };
     const d = snap.data();
 
     // 收集 token 並記住來源欄位路徑，以便失效時精準清除該欄位
@@ -61,7 +61,7 @@ async function sendPush(uid, title, body, data = {}) {
     } else if (d.token) {
       entries.push({ token: d.token, path: "token" });
     }
-    if (!entries.length) return;
+    if (!entries.length) return { success: false, sent: 0, failed: 0 };
 
     // ⚠️ 純 data 訊息：不帶 notification 欄位，避免 FCM 自動顯示 + SW 各顯示一次（重複推播）
     // SW 的 onBackgroundMessage 統一負責顯示通知
@@ -80,11 +80,14 @@ async function sendPush(uid, title, body, data = {}) {
     };
 
     const stalePaths = [];
+    let sent = 0, failed = 0;
 
     if (entries.length === 1) {
       try {
         await admin.messaging().send({ ...msg, token: entries[0].token });
+        sent = 1;
       } catch (sendErr) {
+        failed = 1;
         if (STALE_FCM_CODES.has(sendErr.code)) {
           stalePaths.push(entries[0].path);
         } else {
@@ -93,6 +96,8 @@ async function sendPush(uid, title, body, data = {}) {
       }
     } else {
       const resp = await admin.messaging().sendEachForMulticast({ ...msg, tokens: entries.map(e => e.token) });
+      sent = resp.successCount;
+      failed = resp.failureCount;
       resp.responses.forEach((r, i) => {
         if (r.success) return;
         const code = r.error?.code;
@@ -113,11 +118,13 @@ async function sendPush(uid, title, body, data = {}) {
       }
     }
 
-    if (entries.length - stalePaths.length > 0) {
+    if (sent > 0) {
       console.log(`✅ Push sent to ${uid}: ${title}`);
     }
+    return { success: sent > 0, sent, failed };
   } catch (e) {
     console.warn("Push failed:", e.message);
+    return { success: false, sent: 0, failed: 0 };
   }
 }
 
@@ -979,29 +986,47 @@ exports.scheduledPointsExpiry = onSchedule(
 
 // ── 每日生日推播：當天生日的會員收到祝賀 + 雙倍點提醒 ──────────
 // 生日當天消費集點本來就會自動加倍（見店家端 confirmAmount），這裡只負責主動提醒。
+
+// 台北時區「今天」的 {year, month, day}（兩位數字串）
+function todayTaipeiYMD() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  return {
+    y: parts.find(x => x.type === "year")?.value,
+    m: parts.find(x => x.type === "month")?.value,
+    d: parts.find(x => x.type === "day")?.value,
+  };
+}
+
+// 統一的生日推播內容
+const BIRTHDAY_PUSH_TITLE = "🎂 Happy Birthday! | 生日快樂";
+const BIRTHDAY_PUSH_BODY  = "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！";
+
 async function runBirthdayGreeting() {
-  // 台北時區「今天」的月、日（與店家端 isTodayBirthday 判斷一致）
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-  const tMonth = parts.find(x => x.type === "month")?.value;
-  const tDay = parts.find(x => x.type === "day")?.value;
-  if (!tMonth || !tDay) return { sent: 0, matched: 0 };
+  const { y, m, d } = todayTaipeiYMD();
+  if (!m || !d) return { sent: 0, matched: 0 };
+  const todayStr = `${y}-${m}-${d}`;
 
   const snap = await db.collection("members").get();
   let sent = 0, matched = 0;
   for (const doc of snap.docs) {
-    const bday = doc.data().birthday;
+    const data = doc.data();
+    const bday = data.birthday;
     if (!bday || typeof bday !== "string") continue;
     const p = bday.split("-");
     if (p.length < 3) continue;
-    if (p[1].padStart(2, "0") === tMonth && p[2].padStart(2, "0") === tDay) {
-      matched++;
-      try {
-        await sendPush(doc.id, "🎂 Happy Birthday! | 生日快樂",
-          "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！");
+    if (p[1].padStart(2, "0") !== m || p[2].padStart(2, "0") !== d) continue;
+    matched++;
+    try {
+      const r = await sendPush(doc.id, BIRTHDAY_PUSH_TITLE, BIRTHDAY_PUSH_BODY);
+      if (r && r.success) {
         sent++;
-      } catch (e) {
-        console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
+        // 標記今日已送，避免 onPushTokenWritten 後續觸發重複推播
+        await doc.ref.update({ birthdayPushSentDate: todayStr }).catch(() => {});
       }
+    } catch (e) {
+      console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
     }
   }
   console.log(`[birthday] 推播完成，符合生日 ${matched} 位，送出 ${sent} 位`);
@@ -1024,6 +1049,58 @@ exports.adminTriggerBirthdayGreeting = onCall({ region: "us-central1" }, async (
   const result = await runBirthdayGreeting();
   return { success: true, ...result };
 });
+
+// ── 自動補發：push_tokens 寫入時，若該會員今天生日且尚未送過，立即補發 ──
+// 情境：客人在「生日當天」才加入主畫面/開通知，08:00 排程當下 token 還不存在或失效，
+// 等他完成開通知（push_tokens 寫入）這一刻自動補上生日推播。
+exports.onPushTokenWritten_BirthdayCheck = onDocumentWritten(
+  { document: "push_tokens/{uid}", region: "us-central1" },
+  async (event) => {
+    const uid = event.params.uid;
+    const after = event.data?.after?.data();
+    if (!after) return; // 刪除事件，不處理
+
+    // 確認真的有 token 可推
+    const hasToken =
+      !!after.token ||
+      (after.tokens && typeof after.tokens === "object" &&
+        Object.values(after.tokens).some(t => !!t));
+    if (!hasToken) return;
+
+    try {
+      const memberRef = db.collection("members").doc(uid);
+      const memberSnap = await memberRef.get();
+      if (!memberSnap.exists) return;
+      const member = memberSnap.data();
+
+      const bday = member.birthday;
+      if (!bday || typeof bday !== "string") return;
+      const p = bday.split("-");
+      if (p.length < 3) return;
+
+      const { y, m, d } = todayTaipeiYMD();
+      if (!m || !d) return;
+      if (p[1].padStart(2, "0") !== m || p[2].padStart(2, "0") !== d) return;
+
+      const todayStr = `${y}-${m}-${d}`;
+      if (member.birthdayPushSentDate === todayStr) {
+        console.log(`[birthdayOnToken] uid=${uid} 今日已送過，略過`);
+        return;
+      }
+
+      console.log(`[birthdayOnToken] uid=${uid} 生日當天 token 寫入 → 立即補發`);
+      const r = await sendPush(uid, BIRTHDAY_PUSH_TITLE, BIRTHDAY_PUSH_BODY);
+      if (r && r.success) {
+        await memberRef.update({ birthdayPushSentDate: todayStr }).catch(() => {});
+        console.log(`[birthdayOnToken] uid=${uid} 補發成功`);
+      } else {
+        console.warn(`[birthdayOnToken] uid=${uid} sendPush 未送出（token 可能仍無效）`);
+      }
+    } catch (e) {
+      console.error(`[birthdayOnToken] uid=${uid} 失敗:`, e.message);
+    }
+  }
+);
 
 // ── Firestore Trigger：notifications 新文件 → 自動推播 ──────────
 exports.onNotificationCreated = onDocumentCreated(
