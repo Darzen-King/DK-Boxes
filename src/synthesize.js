@@ -126,6 +126,17 @@ async function elevenSynth(text, voiceId, outPath) {
   fs.writeFileSync(outPath, buf);
 }
 
+// 旁白合成前清理：去 emoji、去 hashtag、壓多餘空白
+// （字幕用的 lines 還是保留原文，這只影響 TTS 餵進去的字串）
+function stripForTts(text) {
+  return text
+    .replace(/#\S+/g, "")
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/[‍️]/g, "")  // ZWJ + variation selector
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function synthesize(provider, lang, text, opts, outPath) {
   if (provider === "edge") {
     const voice = lang === "en"
@@ -163,8 +174,10 @@ async function main() {
   const manifest = { source: jsonPath, provider, model: provider === "elevenlabs" ? DEFAULTS.elevenModel : "edge", tracks: {} };
 
   for (const lang of opts.langs) {
-    const text = script.scripts?.[lang]?.full;
-    if (!text) { console.warn(`   ⚠️ 腳本沒有 ${lang} 內容，略過`); continue; }
+    const rawText = script.scripts?.[lang]?.full;
+    if (!rawText) { console.warn(`   ⚠️ 腳本沒有 ${lang} 內容，略過`); continue; }
+    const text = stripForTts(rawText);
+    if (!text) { console.warn(`   ⚠️ ${lang} 去掉 emoji/hashtag 後沒內容，略過`); continue; }
     const outPath = `${base}-${lang}.mp3`;
     process.stdout.write(`   ⏳ 合成 ${lang}…`);
     const voice = await synthesize(provider, lang, text, opts, outPath);
