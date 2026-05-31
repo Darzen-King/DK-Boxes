@@ -167,7 +167,8 @@ function buildFilter(photoCount, durSec, hasLogo, hasMusic, subsPath) {
   last = "vsub";
 
   // Logo（選用）
-  const logoIdx = 1 + (hasMusic ? 2 : 1); // narration 是 photoCount，BGM 是 photoCount+1，logo 是後面
+  // input 順序：photos 0..N-1、narration N、BGM N+1（若有）、logo 在最後
+  const logoIdx = photoCount + 1 + (hasMusic ? 1 : 0);
   if (hasLogo) {
     const lw = Math.round(V.w * LOGO_W_RATIO);
     chains.push(`[${logoIdx}:v]scale=${lw}:-1[logo]`);
