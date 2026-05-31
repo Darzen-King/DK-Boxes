@@ -154,15 +154,18 @@ app.use(express.static(PUBLIC_DIR));
 app.use("/output", express.static(OUTPUT_DIR));
 
 app.post("/api/produce",
-  upload.fields([{ name: "photos", maxCount: 10 }, { name: "music", maxCount: 1 }, { name: "logo", maxCount: 1 }]),
+  upload.any(),   // 接受任何欄位名，下面手動分流；比 .fields() 嚴格白名單穩定
   (req, res) => {
-    const photos = (req.files?.photos || []).map(f => f.path);
+    const byField = {};
+    for (const f of (req.files || [])) (byField[f.fieldname] ||= []).push(f);
+    const photos = (byField.photos || []).map(f => f.path);
+    const music = byField.music?.[0]?.path;
+    const logo = byField.logo?.[0]?.path;
     const hasUrls = (req.body.urls || "").split(/[\n,]/).map(s => s.trim()).filter(Boolean).length > 0;
     if (photos.length === 0 && !hasUrls) return res.status(400).json({ error: "至少要上傳 1 張照片/影片，或貼一條連結" });
     const jobId = randomUUID();
     const job = {
-      id: jobId, status: "running", photos,
-      music: req.files?.music?.[0]?.path, logo: req.files?.logo?.[0]?.path,
+      id: jobId, status: "running", photos, music, logo,
       events: [], listeners: new Set(), scriptPath: null,
     };
     jobs.set(jobId, job);
@@ -201,6 +204,13 @@ app.post("/api/jobs/:id/cancel", (req, res) => {
   job.status = "cancelled";
   emit(job, "error", { message: "已取消" });
   res.json({ ok: true });
+});
+
+// JSON 錯誤處理：API 路徑出錯統一回 JSON，不要落到 Express 預設的 HTML 錯誤頁
+app.use("/api", (err, req, res, next) => {
+  const detail = err.field ? ` (欄位: ${err.field})` : "";
+  console.error("[API error]", err.message + detail);
+  res.status(err.status || 500).json({ error: (err.message || "Server error") + detail });
 });
 
 function openBrowser(url) {
