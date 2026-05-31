@@ -74,6 +74,7 @@ function applyAdminLang() {
     'tab-rewards':   ['獎品', 'Rewards'],
     'tab-analytics': ['分析', 'Stats'],
     'tab-msg':       ['客服', 'Support'],
+    'tab-promote':   ['推廣', 'Promote'],
     'tab-settings':  ['設定', 'Settings'],
   };
   for (const [id, [zh, en]] of Object.entries(navTexts)) {
