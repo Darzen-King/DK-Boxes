@@ -209,6 +209,13 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Ne
 .info-key{font-size:18px;color:var(--dark)}
 .info-val{font-size:18px;color:#888}
 
+/* 「關注我們」社群按鈕 */
+.social-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:13px 8px;border-radius:12px;color:#fff;font-weight:700;font-size:15px;text-decoration:none;transition:opacity .15s,transform .1s;-webkit-tap-highlight-color:transparent}
+.social-btn:active{opacity:.85;transform:scale(.97)}
+.social-btn.fb{background:#1877F2}
+.social-btn.ig{background:linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)}
+.social-btn svg{width:18px;height:18px;flex-shrink:0}
+
 /* Bottom Nav */
 .bottom-nav{width:100%;background:#fff;border-top:1px solid var(--border);display:flex;padding:7px 0 max(10px,env(safe-area-inset-bottom));flex-shrink:0}
 .bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;color:#C0A0A8;font-size:14px;font-weight:600;padding:3px 0;transition:color .15s}
