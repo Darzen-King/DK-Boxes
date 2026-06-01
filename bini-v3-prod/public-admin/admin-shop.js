@@ -703,11 +703,11 @@ function injectShopAdminUI() {
   const settingsBtn = document.getElementById('tab-settings');
   if (settingsBtn && !document.getElementById('tab-products')) {
     const btns = document.createRange().createContextualFragment(`
-      <button class="admin-bnav-btn" id="tab-products" onclick="window.switchTab('products',this);AdminProducts.renderList()">
+      <button class="admin-bnav-btn" id="tab-products" onclick="window.switchTab('products',this)">
         <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
         <span class="shop-nav-label" data-zh="商品" data-en="Products">商品</span>
       </button>
-      <button class="admin-bnav-btn" id="tab-orders" onclick="window.switchTab('orders',this);AdminOrders.startListening()">
+      <button class="admin-bnav-btn" id="tab-orders" onclick="window.switchTab('orders',this)">
         <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
         <span class="shop-nav-label" data-zh="訂單" data-en="Orders">訂單</span>
       </button>
@@ -761,34 +761,21 @@ function injectShopAdminUI() {
   }
 
   // ── 3. 修正 switchTab 支援新頁面 ──
+  // 採裝飾器（decorator）模式：委派給原版 switchTab，只在外加 admin-shop 自己的增強。
+  // 好處：原版內所有邏輯（lockClearData、loadAnnouncements/loadRewards 等）都會自動執行；
+  //       未來在 admin-app.js 的 switchTab 加任何邏輯，這裡會自動繼承，不再有「沉默 bug」。
   const _origSwitchTab = window.switchTab;
-  window.switchTab = function(tab, btn) {
-    // 隱藏所有 tab-page（包含動態插入的）
-    document.querySelectorAll('.tab-page').forEach(p => {
-      p.classList.remove('active');
-      p.scrollTop = 0;
-    });
-    document.querySelectorAll('.tab-btn,.admin-bnav-btn').forEach(b => b.classList.remove('active'));
-    const bnav = document.getElementById('admin-bnav');
-    if (bnav) bnav.classList.add('visible');
+  window.switchTab = function(tab /*, btn */) {
+    // 走原本流程：含 lockClearData、停用全部分頁/按鈕、啟用目標分頁與按鈕、原有 tab 的 loaders
+    _origSwitchTab(tab);
 
+    // 增強 1：動態插入的 tab-page 補上 flex 佈局（CSS 沒蓋到）
     const page = document.getElementById('tab-' + tab + '-page');
-    if (page) {
-      page.classList.add('active');
-      // 確保動態插入的頁面有正確的 flex 佈局
-      if (!page.style.flexDirection) {
-        page.style.flexDirection = 'column';
-      }
-    }
-    const tabBtn = btn || document.getElementById('tab-' + tab);
-    if (tabBtn) tabBtn.classList.add('active');
+    if (page && !page.style.flexDirection) page.style.flexDirection = 'column';
 
-    // 原有邏輯
-    if (tab === 'announce') { if (typeof loadAnnouncements === 'function') loadAnnouncements(); }
-    if (tab === 'rewards')  { if (typeof loadRewards === 'function') loadRewards(); }
-    if (tab === 'analytics'){ if (typeof window.loadAnalytics === 'function') window.loadAnalytics(); }
-    if (tab === 'products') { AdminProducts.renderList(); }
-    if (tab === 'orders')   { AdminOrders.startListening(); }
+    // 增強 2：admin-shop 加入的新分頁載入對應內容
+    if (tab === 'products') AdminProducts.renderList();
+    if (tab === 'orders')   AdminOrders.startListening();
   };
 
   // ── 4. 插入 Modals ──

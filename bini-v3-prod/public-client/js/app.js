@@ -35,17 +35,42 @@ window.skeletonGrid = function(n = 4) {
   return h + '</div>';
 };
 
+// 數字翻頁動畫：從目前顯示值漸進到目標值（requestAnimationFrame + easeOutCubic）
+window.animateNumber = function(el, to, opts = {}) {
+  if (!el || typeof to !== 'number' || !isFinite(to)) return;
+  const duration = opts.duration ?? 700;
+  const isInt = opts.isInt ?? Number.isInteger(to);
+  const format = (n) => isInt ? Math.round(n).toLocaleString() : (Math.round(n * 10) / 10).toFixed(1);
+  const from = parseFloat((el.textContent || '0').replace(/[^\d.-]/g, '')) || 0;
+  if (Math.abs(from - to) < 0.05) { el.textContent = format(to); return; }
+  // 取消同元素上的舊動畫，避免兩個 RAF 互相覆蓋
+  if (el._animRaf) cancelAnimationFrame(el._animRaf);
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = format(from + (to - from) * eased);
+    if (t < 1) el._animRaf = requestAnimationFrame(tick);
+    else el._animRaf = null;
+  };
+  el._animRaf = requestAnimationFrame(tick);
+};
+
 // ── 會員等級設定 ──
 // VAPID Key 來自 Firebase Console → Project Settings → Cloud Messaging → 網路推播憑證
 // 截圖中可見的 Key（請確認完整 Key 後填入）
 const VAPID_KEY = 'BHTHLzWPh4B-4m_moKfu7jCUwfqeT-r8vTbtUQct3EMAiaUKz45YbexrWx_xp72plFRNSq0ss2hmhWMvv13m2F4';
+// 等級資訊（門檻、圖示、名稱固定）；倍率與 base 規則來自 Firestore config/point_rules
 const TIERS = [
-  { id:'normal', name:{zh:'一般會員',en:'Member'},    icon:'🛍️', minSpent:0,     maxSpent:10000,  rate:1.0, label:{zh:'消費 NT$200 = 1 點',en:'NT$200 = 1 pt'} },
-  { id:'vip',    name:{zh:'VIP 會員',en:'VIP'},       icon:'⭐', minSpent:10001, maxSpent:15000,  rate:1.3, label:{zh:'消費 NT$200 = 1.3 點',en:'NT$200 = 1.3 pts'} },
-  { id:'vvip',   name:{zh:'VVIP 會員',en:'VVIP'},     icon:'🌟', minSpent:15001, maxSpent:25000,  rate:1.5, label:{zh:'消費 NT$200 = 1.5 點',en:'NT$200 = 1.5 pts'} },
-  { id:'vvvip',  name:{zh:'VVVIP 會員',en:'VVVIP'},   icon:'💎', minSpent:25001, maxSpent:Infinity, rate:2.0, label:{zh:'消費 NT$200 = 2 點',en:'NT$200 = 2 pts'} },
+  { id:'normal', name:{zh:'一般會員',en:'Member'},  icon:'🛍️', minSpent:0,     maxSpent:10000,    rate:1.0 },
+  { id:'vip',    name:{zh:'VIP 會員',en:'VIP'},     icon:'⭐', minSpent:10001, maxSpent:15000,    rate:1.3 },
+  { id:'vvip',   name:{zh:'VVIP 會員',en:'VVIP'},   icon:'🌟', minSpent:15001, maxSpent:25000,    rate:1.5 },
+  { id:'vvvip',  name:{zh:'VVVIP 會員',en:'VVVIP'},icon:'💎', minSpent:25001, maxSpent:Infinity, rate:2.0 },
 ];
-const BASE_UNIT = 200;         // 每 NT$200 計算一次
+// 預設值，loadPointRules() 會從 Firestore 覆寫
+let BASE_UNIT   = 200;
+let BASE_POINTS = 1;
+let TIER_RATES  = { normal:1.0, vip:1.3, vvip:1.5, vvvip:2.0 };
 const POINTS_EXPIRY_DAYS = 90; // 點數有效期 90 天（3個月）
 
 function getTierBySpent(spent) {
@@ -54,8 +79,31 @@ function getTierBySpent(spent) {
   }
   return TIERS[0];
 }
+function rateOf(tier) { return TIER_RATES[tier.id] ?? tier.rate ?? 1.0; }
 function calcPoints(amount, tier) {
-  return Math.round(Math.floor(amount / BASE_UNIT) * tier.rate * 10) / 10; // 先取整數單位再乘倍率
+  return Math.round(Math.floor(amount / BASE_UNIT) * BASE_POINTS * rateOf(tier) * 10) / 10;
+}
+// 依目前 BASE_UNIT / BASE_POINTS / TIER_RATES 動態產生等級規則文字
+function tierLabel(tier) {
+  const pts = BASE_POINTS * rateOf(tier);
+  const ptsStr = Number.isInteger(pts) ? pts : Math.round(pts * 10) / 10;
+  return {
+    zh: `消費 NT$${BASE_UNIT} = ${ptsStr} 點`,
+    en: `NT$${BASE_UNIT} = ${ptsStr} pt${pts === 1 ? '' : 's'}`,
+  };
+}
+// 載入店家的集點規則（任何登入會員都可讀）
+async function loadPointRules() {
+  try {
+    const snap = await getDoc(doc(db, 'config', 'point_rules'));
+    if (!snap.exists()) return;
+    const d = snap.data();
+    if (d.baseUnit)   BASE_UNIT   = d.baseUnit;
+    if (d.basePoints) BASE_POINTS = d.basePoints;
+    if (d.rates)      TIER_RATES  = { ...TIER_RATES, ...d.rates };
+    // 重新渲染依賴規則的 UI
+    if (typeof renderTierRules === 'function') renderTierRules();
+  } catch(e) { console.warn('loadPointRules:', e.message); }
 }
 function phoneToEmail(p) { return `m${p.replace(/\D/g,'')}@bini-blooms.app`; }
 function getTodayCode() {
@@ -117,28 +165,54 @@ function t(zh, en) { return lang==='zh' ? zh : en; }
 
 function renderTierRules() {
   const el = document.getElementById('tier-rules-display'); if(!el) return;
-  el.innerHTML = TIERS.map(ti =>
-    `${ti.icon} ${lang==='zh'?ti.name.zh:ti.name.en}：${lang==='zh'?ti.label.zh:ti.label.en}`
-  ).join('<br>');
+  el.innerHTML = TIERS.map(ti => {
+    const lbl = tierLabel(ti);
+    return `${ti.icon} ${lang==='zh'?ti.name.zh:ti.name.en}：${lang==='zh'?lbl.zh:lbl.en}`;
+  }).join('<br>');
 }
 
 // ── 狀態 ──
 let currentUser=null, memberData=null, confirmResult=null;
-let chatUnsub=null, lastDateLabel='';
+let chatUnsub=null, lastDateLabel='', memberDocUnsub=null;
 let pendingDeductPts=0, pendingReward=null, deferredInstall=null;
 let regPhone='', regName='', regBirthday='', regPassword='';
 
 // ── PWA ──
+function isIOSDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+}
+function isIOSSafari(){
+  if(!isIOSDevice()) return false;
+  const ua=navigator.userAgent;
+  return /Safari/i.test(ua) && !/(CriOS|FxiOS|EdgiOS|OPiOS|GSA|Line|FBA[NV]|FBIOS|Instagram|MicroMessenger|DuckDuckGo|YaBrowser)/i.test(ua);
+}
+function isStandalonePWA(){
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
 window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); deferredInstall=e; const btn=document.getElementById('btn-install'); if(btn) btn.style.display='flex'; });
 window.addEventListener('appinstalled', ()=>{ deferredInstall=null; showToast(t('已加入主畫面！','Added!')); const btn=document.getElementById('btn-install'); if(btn) btn.style.display='none'; });
+// iOS 不會觸發 beforeinstallprompt，需主動顯示按鈕，點擊時再給正確指引
+if(isIOSDevice() && !isStandalonePWA()){
+  const btn=document.getElementById('btn-install'); if(btn) btn.style.display='flex';
+}
 window.handleInstall = async function() {
-  if(window.matchMedia('(display-mode: standalone)').matches){ showToast(t('已在主畫面！','Already on home screen!')); return; }
+  if(isStandalonePWA()){ showToast(t('已在主畫面！','Already on home screen!')); return; }
   if(deferredInstall){
     if(!confirm(t('BINI Blooms 將加入手機主畫面，方便下次直接開啟。\n確認加入？','Add BINI Blooms to your home screen?\nConfirm?'))) return;
     deferredInstall.prompt(); const{outcome}=await deferredInstall.userChoice;
     if(outcome==='accepted') showToast(t('成功加入主畫面！','Added!')); deferredInstall=null;
+  } else if(isIOSDevice() && !isIOSSafari()){
+    let copied=false;
+    try{ await navigator.clipboard?.writeText(location.href.split('#')[0]); copied=true; }catch(e){}
+    alert(t(
+      '⚠️ 請改用「Safari」開啟本頁\n\niOS 只有 Safari 能「加入主畫面」並啟用推播通知，目前的瀏覽器（如 Chrome）做不到。\n\n'+(copied?'已複製網址，請：\n1. 開啟 Safari 貼上網址前往\n':'1. 用 Safari 開啟本頁網址\n')+'2. 點畫面下方「分享」按鈕 □↑\n3. 往下滑，選「加入主畫面」',
+      '⚠️ Please open this page in Safari\n\nOn iOS, only Safari can Add to Home Screen & enable push. Other browsers (e.g. Chrome) cannot.\n\n'+(copied?'The URL has been copied:\n1. Open Safari and paste the URL\n':'1. Open this page in Safari\n')+'2. Tap Share □↑\n3. Choose "Add to Home Screen"'));
+  } else if(isIOSDevice()){
+    alert(t(
+      'iOS 加入主畫面步驟：\n1. 點畫面下方「分享」按鈕 □↑\n2. 往下滑，選「加入主畫面」\n3. 確認名稱「BINI Blooms」後點「新增」',
+      'Add to Home Screen (iOS):\n1. Tap Share □↑ at the bottom\n2. Scroll and tap "Add to Home Screen"\n3. Confirm "BINI Blooms" and tap Add'));
   } else {
-    alert(t('iOS 步驟：\n1. 點 Safari 下方「分享」按鈕 □↑\n2. 選「加入主畫面」\n3. 確認名稱「BINI Blooms」後點新增','iOS: Tap Share □↑ → Add to Home Screen → confirm "BINI Blooms"'));
+    alert(t('請從瀏覽器選單選擇「安裝」或「加入主畫面」','Use your browser menu: Install / Add to Home Screen'));
   }
 };
 
@@ -149,7 +223,7 @@ onAuthStateChanged(auth, async user => {
     const snap = await getDoc(doc(db,'members',user.uid));
     if (snap.exists()) {
       memberData = snap.data();
-      showApp(); loadHomeData(); checkUnread();
+      showApp(); loadPointRules(); loadHomeData(); checkUnread(); subscribeMemberData();
       // 推播權限判斷（iOS PWA 必須透過使用者手勢觸發）
       setTimeout(() => {
         const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
@@ -367,15 +441,20 @@ window.handleCompleteRegister = async function() {
       joinedAt: serverTimestamp(),
       welcomeBonus: true,
     });
-    // 寫入歡迎贈點交易紀錄
-    await addDoc(collection(db,'transactions'), {
-      uid: user.uid,
-      type: 'welcome',
-      points: 10,
-      desc: '新會員歡迎贈點',
-      descEn: 'Welcome bonus points',
-      createdAt: serverTimestamp(),
-    });
+    // 寫入歡迎贈點交易紀錄（非關鍵：點數已記在 member 文件，這只是歷史紀錄。
+    // 若因規則未部署等原因失敗，不應中斷註冊，否則使用者會卡在註冊頁無法返回）
+    try {
+      await addDoc(collection(db,'transactions'), {
+        uid: user.uid,
+        type: 'welcome',
+        points: 10,
+        desc: '新會員歡迎贈點',
+        descEn: 'Welcome bonus points',
+        createdAt: serverTimestamp(),
+      });
+    } catch(txErr) {
+      console.warn('welcome transaction write failed (non-fatal):', txErr.code || txErr.message);
+    }
     // 推薦碼（選填）：僅記錄推薦關係，新會員不會額外加點；
     // 推薦人的回饋待此新會員首次消費集點時才發放。
     let referralApplied = false;
@@ -414,10 +493,17 @@ window.handleCompleteRegister = async function() {
   }
 };
 
+// 註冊途中返回登入：登出未完成的 phone-auth 階段，onAuthStateChanged 會自動回到登入畫面
+window.cancelRegister = async function() {
+  try { await signOut(auth); } catch(e) {}
+  showView('login');
+};
+
 window.handleLogout = async function() {
   if (!confirm(t('確定要登出嗎？','Sign out?'))) return;
   if (chatUnsub) { chatUnsub(); chatUnsub=null; }
   if (notificationsUnsub) { notificationsUnsub(); notificationsUnsub=null; }
+  if (memberDocUnsub) { memberDocUnsub(); memberDocUnsub=null; }
   await signOut(auth);
 };
 
@@ -495,6 +581,8 @@ function updateTopTitle() {
   }
 }
 window.switchPage = function(pageId, btn) {
+  // 離開掃描頁時關閉相機釋放資源（避免電力消耗）
+  if (pageId !== 'scan' && typeof stopLiveScan === 'function') stopLiveScan();
   document.querySelectorAll('.page').forEach(p=>{ p.classList.remove('active'); p.scrollTop=0; });
   document.querySelectorAll('.bnav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+pageId).classList.add('active');
@@ -505,6 +593,7 @@ window.switchPage = function(pageId, btn) {
   if(pageId==='redeem')   loadRedeem();
   if(pageId==='announce') loadAnnouncements();
   if(pageId==='profile')  loadProfile();
+  if(pageId==='scan')     startLiveScan();
     if(pageId==='shop') {
       // shop.js 是 type=module，非同步載入，需等待掛載到 window
       const waitShop = (retry = 0) => {
@@ -552,7 +641,7 @@ async function loadHomeData() {
     document.getElementById('hero-name').textContent  = memberData.name;
     document.getElementById('hero-id').textContent    = 'ID #'+currentUser.uid.slice(-6).toUpperCase();
     document.getElementById('hero-tier').textContent  = tier.icon+' '+(lang==='zh'?tier.name.zh:tier.name.en);
-    const _pts = memberData.points||0; document.getElementById('hero-pts').textContent = Number.isInteger(_pts)?_pts.toLocaleString():_pts.toFixed(1);
+    const _pts = memberData.points||0; window.animateNumber(document.getElementById('hero-pts'), _pts);
 
     // 載入即將過期的點數批次
     await loadExpiryInfo();
@@ -722,7 +811,124 @@ async function loadExpiryInfo() {
   } catch(e) { console.error('expiryInfo:',e); }
 }
 
-// ── QR 掃描（高成功率版本）──
+// ── 即時相機掃描（A: BarcodeDetector + B: jsQR fallback）──
+let _scanStream = null, _scanRaf = null, _scanDetector = null, _scanCanvas = null;
+let _scanActive = false, _scanLastTry = 0, _scanDetectorInited = false;
+
+async function startLiveScan() {
+  if (_scanActive) return;
+  _scanActive = true;
+  const video = document.getElementById('scan-video');
+  const status = document.getElementById('scan-status');
+  const viewfinder = document.getElementById('scan-viewfinder');
+  const fallbackBtn = document.getElementById('scan-fallback-btn');
+  if (viewfinder) viewfinder.classList.remove('found');
+
+  // 1. 嘗試初始化 BarcodeDetector（Android Chrome / 較新瀏覽器有）
+  if (!_scanDetectorInited && 'BarcodeDetector' in window) {
+    _scanDetectorInited = true;
+    try {
+      const fmts = await window.BarcodeDetector.getSupportedFormats();
+      if (fmts.includes('qr_code')) {
+        _scanDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        console.log('[scan] 使用 BarcodeDetector');
+      }
+    } catch (e) { _scanDetector = null; }
+  }
+
+  // 2. 啟動相機
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('no_getUserMedia');
+    _scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    video.srcObject = _scanStream;
+    // iOS Safari 需要明確 play()，並用 catch 吞掉非致命錯誤
+    try { await video.play(); } catch (e) {}
+    if (status) status.innerHTML = `<span style="color:var(--brown)">📷 ${t('對準 QR Code，自動辨識中…','Aim at the QR Code…')}</span>`;
+    if (fallbackBtn) fallbackBtn.style.display = 'none';
+    _scanLastTry = 0;
+    scanLoop();
+  } catch (err) {
+    console.warn('getUserMedia failed:', err.name, err.message);
+    _scanActive = false;
+    const denied = ['NotAllowedError','PermissionDeniedError','SecurityError'].includes(err.name);
+    if (status) {
+      status.innerHTML = denied
+        ? `<span style="color:#c0392b">⚠️ ${t('相機權限未開啟','Camera permission denied')}</span><br><span style="font-size:12px;color:#888">${t('iOS：設定 → Safari → 相機 → 允許','iOS: Settings → Safari → Camera → Allow')}</span>`
+        : `<span style="color:#c0392b">⚠️ ${t('無法啟動相機，請改用拍照','Cannot start camera, use photo')}</span>`;
+    }
+    if (fallbackBtn) fallbackBtn.style.display = 'block';   // 顯示拍照備援
+  }
+}
+
+function stopLiveScan() {
+  _scanActive = false;
+  if (_scanRaf) { cancelAnimationFrame(_scanRaf); _scanRaf = null; }
+  if (_scanStream) {
+    _scanStream.getTracks().forEach(t => t.stop());
+    _scanStream = null;
+  }
+  const video = document.getElementById('scan-video');
+  if (video) { try { video.pause(); video.srcObject = null; } catch (e) {} }
+}
+
+async function scanLoop() {
+  if (!_scanActive) return;
+  const video = document.getElementById('scan-video');
+  if (!video || video.readyState < 2 || video.videoWidth === 0) {
+    _scanRaf = requestAnimationFrame(scanLoop); return;
+  }
+  // 節流：每 100ms 試一次（≈10 FPS）— 已經夠快又省電
+  const now = performance.now();
+  if (now - _scanLastTry < 100) { _scanRaf = requestAnimationFrame(scanLoop); return; }
+  _scanLastTry = now;
+
+  let result = null;
+  // 路徑 A：BarcodeDetector（快、準）
+  if (_scanDetector) {
+    try {
+      const codes = await _scanDetector.detect(video);
+      if (codes && codes.length) result = codes[0].rawValue;
+    } catch (e) { /* 偶發失敗，續試 jsQR */ }
+  }
+  // 路徑 B：jsQR fallback（iOS Safari、舊瀏覽器）
+  if (!result) {
+    try {
+      if (!_scanCanvas) _scanCanvas = document.createElement('canvas');
+      const vw = video.videoWidth, vh = video.videoHeight;
+      // 取畫面中央 ~72%（對應 viewfinder 的 scan-box）並縮到 400px 加速
+      const sx = vw * 0.14, sy = vh * 0.14, sw = vw * 0.72, sh = vh * 0.72;
+      const target = 400;
+      const scale = Math.min(1, target / Math.max(sw, sh));
+      _scanCanvas.width = Math.round(sw * scale);
+      _scanCanvas.height = Math.round(sh * scale);
+      const ctx = _scanCanvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, _scanCanvas.width, _scanCanvas.height);
+      const img = ctx.getImageData(0, 0, _scanCanvas.width, _scanCanvas.height);
+      let code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      if (!code) code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'onlyInvert' });
+      if (code) result = code.data;
+    } catch (e) { /* 偶發 */ }
+  }
+
+  if (result) {
+    // 找到！停止掃描、震動、動畫、處理結果
+    const viewfinder = document.getElementById('scan-viewfinder');
+    if (viewfinder) viewfinder.classList.add('found');
+    if (navigator.vibrate) { try { navigator.vibrate(80); } catch (e) {} }
+    stopLiveScan();
+    const status = document.getElementById('scan-status');
+    if (status) status.innerHTML = `<span style="color:#27ae60;font-weight:700">✅ ${t('辨識成功！','Recognized!')}</span>`;
+    try { await processQRScan(result); } catch (e) { console.error(e); }
+    return;
+  }
+
+  _scanRaf = requestAnimationFrame(scanLoop);
+}
+
+// 拍照備援（舊流程，相機失敗時使用）
 window.handleQRFile = async function(input) {
   const file = input.files[0]; if (!file) return;
   const statusEl  = document.getElementById('scan-status');
@@ -919,6 +1125,11 @@ function listenForPoints(token) {
 
 function showScanError(msg) {
   document.getElementById('scan-status').textContent=msg;
+  // 若仍停留在掃描頁，2.5 秒後自動重啟相機，方便使用者再試一次
+  setTimeout(() => {
+    const onScan = document.getElementById('page-scan')?.classList.contains('active');
+    if (onScan && typeof startLiveScan === 'function') startLiveScan();
+  }, 2500);
 }
 function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0) {
   document.getElementById('modal-icon').textContent=birthdayBonus?'🎂':'🎉';
@@ -938,6 +1149,21 @@ function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0
   document.getElementById('modal-overlay').style.display='flex';
 }
 
+// ── 會員資料即時監聽：點數變動立刻以動畫呈現 ──
+function subscribeMemberData() {
+  if (!currentUser) return;
+  if (memberDocUnsub) { memberDocUnsub(); memberDocUnsub = null; }
+  memberDocUnsub = onSnapshot(doc(db,'members',currentUser.uid), (snap) => {
+    if (!snap.exists()) return;
+    memberData = snap.data();
+    const pts = memberData.points || 0;
+    const heroEl = document.getElementById('hero-pts');
+    if (heroEl) window.animateNumber(heroEl, pts);
+    const redeemEl = document.getElementById('redeem-pts-avail');
+    if (redeemEl) window.animateNumber(redeemEl, pts);
+  }, (err) => console.warn('memberDoc listener:', err.message));
+}
+
 // ── 兌換頁 ──
 async function loadRedeem() {
   if(!currentUser) return;
@@ -946,7 +1172,7 @@ async function loadRedeem() {
   try {
     const snap=await getDoc(doc(db,'members',currentUser.uid)); if(snap.exists()) memberData=snap.data();
     const pts=memberData?.points||0;
-    document.getElementById('redeem-pts-avail').textContent=Number.isInteger(pts)?pts.toLocaleString():pts.toFixed(1);
+    window.animateNumber(document.getElementById('redeem-pts-avail'), pts);
     document.getElementById('deduct-preview').textContent='0'; document.getElementById('deduct-input').value='';
     const list=document.getElementById('rewards-list');
     const rSnap=await getDocs(collection(db,'rewards'));
@@ -992,7 +1218,7 @@ window.confirmDeduct=async function(){
     // 優先扣除最快到期的點數批次
     await deductPointsByExpiry(pendingDeductPts);
     memberData.points-=pendingDeductPts;
-    const _rp=memberData.points; document.getElementById('redeem-pts-avail').textContent=Number.isInteger(_rp)?_rp.toLocaleString():_rp.toFixed(1);
+    const _rp=memberData.points; window.animateNumber(document.getElementById('redeem-pts-avail'), _rp);
     showModal('💰',t('折抵成功！','Discount Applied!'),`-${pendingDeductPts}`,`${t('已折抵','Deducted')} NT${pendingDeductPts.toLocaleString()}\n${t('剩餘','Remaining')} ${Number.isInteger(_rp)?_rp.toLocaleString():_rp.toFixed(1)} ${t('點','pts')}`,false);
     document.getElementById('deduct-input').value=''; document.getElementById('deduct-preview').textContent='0';
   } catch(e) { console.error(e); showToast(t('折抵失敗','Deduction failed')); }
@@ -1228,6 +1454,35 @@ window.handleEnablePush = async function() {
   const btn = document.getElementById('btn-enable-push');
   if (btn) btn.style.display = 'none';
   await initPushNotifications();
+};
+
+// 我的帳戶頁的「重新啟用推播」：強制重跑 getToken 並寫回 push_tokens
+// 用於 token 失效（NotRegistered）等狀況下，由使用者手動修復
+window.reEnablePush = async function() {
+  if (!('Notification' in window)) {
+    showToast(t('此裝置不支援推播', 'Push not supported on this device'));
+    return;
+  }
+  // permission 為 denied 時，requestPermission 會直接回 denied 不再跳對話框
+  if (Notification.permission === 'denied') {
+    alert(t(
+      '⚠️ 推播權限已被封鎖\n\n請至 iOS「設定 → 通知 → BINI Blooms」開啟允許通知，回到 APP 後再試一次。',
+      '⚠️ Push permission is blocked\n\nPlease enable notifications in iOS Settings → Notifications → BINI Blooms, then return to the app and try again.'
+    ));
+    return;
+  }
+  showToast(t('重新註冊推播中…', 'Re-registering push…'));
+  try {
+    await initPushNotifications();
+    if (Notification.permission === 'granted') {
+      showToast(t('✅ 推播已重新啟用', '✅ Push notifications re-enabled'));
+    } else {
+      showToast(t('未啟用推播', 'Push not enabled'));
+    }
+  } catch (e) {
+    console.error('reEnablePush:', e);
+    showToast(t('推播啟用失敗，請稍後再試', 'Failed to re-enable push, please retry'));
+  }
 };
 
 async function initPushNotifications() {

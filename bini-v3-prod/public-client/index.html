@@ -11,6 +11,9 @@
 <meta name="theme-color" content="#3d0c1a">
 <title>BINI Blooms 會員集點</title>
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=10">
+<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png?v=10">
+<link rel="shortcut icon" type="image/png" href="/icons/icon-192.png?v=10">
 <link rel="apple-touch-icon" href="/icons/icon-512.png?v=10">
 <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png?v=10">
 <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png?v=10">
@@ -140,6 +143,9 @@
         <span data-zh="完成加入會員" data-en="Complete Registration">完成加入會員</span>
       </button>
       <p id="profile-msg" class="login-msg"></p>
+      <button class="btn-secondary" onclick="cancelRegister()">
+        <span data-zh="返回登入" data-en="Back to Sign In">返回登入</span>
+      </button>
     </div>
 
     <!-- 初始註冊（輸入手機，取得 OTP） -->
@@ -275,15 +281,21 @@
         <span data-zh="掃描店員出示的 QR Code 即可集點" data-en="Scan the QR Code shown by staff to earn points">掃描店員出示的 QR Code 即可集點</span>
       </div>
 
-      <!-- 拍攝技巧 -->
-      <div style="background:var(--pale);border-radius:14px;padding:14px 16px;width:100%">
-        <div style="font-size:12px;font-weight:700;color:var(--brown);margin-bottom:8px" data-zh="📸 拍攝技巧（提高成功率）" data-en="📸 Tips for best results">📸 拍攝技巧（提高成功率）</div>
-        <div style="font-size:12px;color:var(--brown);line-height:2">
-          <div data-zh="✅ QR Code 置中，距離約 15～25 公分" data-en="✅ Center the QR Code, 15-25cm away">✅ QR Code 置中，距離約 15～25 公分</div>
-          <div data-zh="✅ 確保光線充足，避免陰影遮擋" data-en="✅ Good lighting, no shadows">✅ 確保光線充足，避免陰影遮擋</div>
-          <div data-zh="✅ 手機拿穩，畫面清晰不模糊" data-en="✅ Hold steady, keep image sharp">✅ 手機拿穩，畫面清晰不模糊</div>
-          <div data-zh="✅ 若失敗請稍微改變距離後重試" data-en="✅ If failed, slightly adjust distance">✅ 若失敗請稍微改變距離後重試</div>
+      <!-- 即時掃描相機畫面 -->
+      <div class="scan-viewfinder" id="scan-viewfinder">
+        <video id="scan-video" autoplay playsinline muted></video>
+        <div class="scan-box">
+          <span class="scan-corner tl"></span>
+          <span class="scan-corner tr"></span>
+          <span class="scan-corner bl"></span>
+          <span class="scan-corner br"></span>
         </div>
+        <div class="scan-laser"></div>
+      </div>
+
+      <!-- 狀態顯示 -->
+      <div id="scan-status-wrap" style="width:100%;min-height:42px;display:flex;align-items:center;justify-content:center">
+        <p id="scan-status" class="scan-status" style="text-align:center;width:100%;margin:0"></p>
       </div>
 
       <!-- 集點規則 -->
@@ -292,10 +304,9 @@
         <div id="tier-rules-display" style="font-size:12px;color:var(--brown);line-height:1.8"></div>
       </div>
 
-      <!-- 掃描按鈕 -->
-      <label for="qr-file-input" class="btn-primary" id="scan-btn-label" style="cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;width:100%">
-        <svg id="scan-icon" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
-        <span id="scan-btn-text" data-zh="開啟相機掃描" data-en="Open Camera">開啟相機掃描</span>
+      <!-- 拍照備援（相機權限被拒/無相機時才顯示） -->
+      <label for="qr-file-input" class="btn-outline" id="scan-fallback-btn" style="display:none;cursor:pointer;text-align:center;width:100%;padding:11px;border:1.5px solid var(--border);border-radius:12px;font-size:15px;color:var(--brown);font-weight:600">
+        <span data-zh="📷 改用拍照辨識" data-en="📷 Use Photo Instead">📷 改用拍照辨識</span>
       </label>
       <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display:none" onchange="handleQRFile(this)">
 
@@ -304,11 +315,6 @@
         <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
         <span data-zh="取消，返回首頁" data-en="Cancel, Back to Home">取消，返回首頁</span>
       </button>
-
-      <!-- 狀態顯示 -->
-      <div id="scan-status-wrap" style="width:100%;min-height:52px;display:flex;align-items:center;justify-content:center">
-        <p id="scan-status" class="scan-status" style="text-align:center;width:100%"></p>
-      </div>
     </div>
   </div>
 
@@ -515,10 +521,37 @@
           <span data-zh="好友註冊時輸入您的推薦碼，待好友首次消費集點，您即可獲得 10 點回饋 🎁" data-en="When a friend signs up with your code and makes their first purchase, you get 10 bonus points 🎁">好友註冊時輸入您的推薦碼，待好友首次消費集點，您即可獲得 10 點回饋 🎁</span>
         </div>
       </div>
+      <div class="info-list" style="margin-top:14px">
+        <div class="info-row">
+          <span class="info-key" data-zh="推播通知" data-en="Push Notifications">推播通知</span>
+          <button onclick="reEnablePush()" style="background:var(--pale);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:14px;cursor:pointer" data-zh="重新啟用" data-en="Re-enable">重新啟用</button>
+        </div>
+        <div class="info-row" style="display:block;font-size:13px;color:#888;line-height:1.5">
+          <span data-zh="如果收不到推播通知，點此重新註冊。" data-en="Not receiving push notifications? Tap to re-register.">如果收不到推播通知，點此重新註冊。</span>
+        </div>
+      </div>
+      <div class="info-list" style="margin-top:14px">
+        <div class="info-row" style="display:block;padding-bottom:8px">
+          <div style="font-weight:700;color:var(--dark);font-size:15px" data-zh="🌸 關注我們" data-en="🌸 Follow Us">🌸 關注我們</div>
+          <div style="font-size:13px;color:#888;margin-top:4px;line-height:1.5" data-zh="追蹤社群，掌握最新優惠與商品資訊" data-en="Follow us for the latest promotions and new arrivals">追蹤社群，掌握最新優惠與商品資訊</div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <a href="https://www.facebook.com/samstorephilgoods" target="_blank" rel="noopener" class="social-btn fb">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z"/></svg>
+            <span>Facebook</span>
+          </a>
+          <a href="https://www.instagram.com/biniblooms250808" target="_blank" rel="noopener" class="social-btn ig">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+            <span>Instagram</span>
+          </a>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <div style="flex:1;font-size:11px;color:#888;text-align:center;line-height:1.4">Bini Blooms Brand Boutique</div>
+          <div style="flex:1;font-size:11px;color:#888;text-align:center;line-height:1.4">@biniblooms250808</div>
+        </div>
+      </div>
     </div>
   </div>
-
-  <!-- 底部導覽 -->
   <nav class="bottom-nav" style="display:none">
     <button class="bnav-btn active" onclick="switchPage('home',this)">
       <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955a1.126 1.126 0 011.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75"/></svg>

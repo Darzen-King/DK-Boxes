@@ -26,11 +26,17 @@ const TIERS = [
   { id:'vvip',   name:'VVIP 會員',nameEn:'VVIP',    minSpent:15001, maxSpent:25000,  rate:1.5 },
   { id:'vvvip',  name:'VVVIP 會員',nameEn:'VVVIP',  minSpent:25001,maxSpent:Infinity,rate:2.0},
 ];
-const BASE_UNIT         = 200;
-const POINTS_EXPIRY_DAYS= 90;
+// 以下為「預設值」，loadPointSettings() 會從 Firestore config/point_rules 覆寫
+// 都用 let，讓設定頁儲存後立刻生效，不需重新整理
+let BASE_UNIT          = 200;
+let BASE_POINTS        = 1;
+let TIER_RATES         = { normal:1.0, vip:1.3, vvip:1.5, vvvip:2.0 };
+const POINTS_EXPIRY_DAYS = 90;
 
 function getTierBySpent(s){ for(let i=TIERS.length-1;i>=0;i--){if(s>=TIERS[i].minSpent)return TIERS[i];}return TIERS[0]; }
-function calcPoints(amount,tier){ return Math.round(Math.floor(amount/BASE_UNIT)*tier.rate*10)/10; } // 先取整數單位再乘倍率
+function rateOf(tier){ return TIER_RATES[tier.id] ?? tier.rate ?? 1.0; }
+// 公式：floor(消費 / BASE_UNIT) × BASE_POINTS × 等級倍率
+function calcPoints(amount,tier){ return Math.round(Math.floor(amount/BASE_UNIT) * BASE_POINTS * rateOf(tier) * 10) / 10; }
 
 let currentAdmin=null, inboxUnsub=null, chatUnsub=null, pendingQRUnsub=null;
 let inboxDocs=[], inboxShowHidden=false;
@@ -74,6 +80,7 @@ function applyAdminLang() {
     'tab-rewards':   ['獎品', 'Rewards'],
     'tab-analytics': ['分析', 'Stats'],
     'tab-msg':       ['客服', 'Support'],
+    'tab-promote':   ['推廣', 'Promote'],
     'tab-settings':  ['設定', 'Settings'],
   };
   for (const [id, [zh, en]] of Object.entries(navTexts)) {
@@ -187,7 +194,7 @@ function showApp(){
   applyAdminLang();
   loadMemberCount(); loadStats(); startInbox(); loadRewards(); loadAnnouncements();
   startConnectionMonitor();
-  if(window._deferredInstall) document.getElementById('btn-shop-install').style.display='flex';
+  if(window._deferredInstall || (isIOSDevice() && !isStandalonePWA())) document.getElementById('btn-shop-install').style.display='flex';
   switchTab('qr');
   // 登入後同步 shop nav 語言（300ms 等待 admin-shop.js inject 完成）
   setTimeout(() => { if (typeof syncShopNavLang === 'function') syncShopNavLang(); }, 500);
@@ -209,6 +216,33 @@ window.handleAdminEnablePush = async function() {
   const btn = document.getElementById('btn-admin-enable-push');
   if(btn) btn.style.display = 'none';
   await initAdminPush();
+};
+
+// 設定頁的「重新啟用推播」：強制重跑 getToken 並寫回 admin_tokens
+// 用於 token 失效（NotRegistered）等狀況下，由店家手動修復
+window.reEnableAdminPush = async function() {
+  if(!('Notification' in window)) {
+    showToast(shopLang==='zh' ? '此裝置不支援推播' : 'Push not supported on this device');
+    return;
+  }
+  if(Notification.permission === 'denied') {
+    alert(shopLang==='zh'
+      ? '⚠️ 推播權限已被封鎖\n\n請至 iOS「設定 → 通知 → BINI Backend」開啟允許通知，回到 APP 後再試一次。'
+      : '⚠️ Push permission is blocked\n\nPlease enable notifications in iOS Settings → Notifications → BINI Backend, then return to the app and try again.');
+    return;
+  }
+  showToast(shopLang==='zh' ? '重新註冊推播中…' : 'Re-registering push…');
+  try {
+    await initAdminPush();
+    if(Notification.permission === 'granted') {
+      showToast(shopLang==='zh' ? '✅ 推播已重新啟用' : '✅ Push notifications re-enabled');
+    } else {
+      showToast(shopLang==='zh' ? '未啟用推播' : 'Push not enabled');
+    }
+  } catch(e) {
+    console.error('reEnableAdminPush:', e);
+    showToast(shopLang==='zh' ? '推播啟用失敗，請稍後再試' : 'Failed to re-enable push, please retry');
+  }
 };
 
 async function initAdminPush() {
@@ -314,6 +348,8 @@ window.handleChangePw=async function(){
 
 // ── Tab 切換 ──
 window.switchTab=function(tab){
+  // 切換分頁時自動把刪除工具重新上鎖（即使停留在設定頁未操作也回到密碼狀態），避免誤按
+  lockClearData();
   const _nav=document.getElementById('admin-bnav'); if(_nav) _nav.classList.add('visible');
   document.querySelectorAll('.tab-btn,.admin-bnav-btn').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.tab-page').forEach(p=>{ p.classList.remove('active'); p.scrollTop=0; });
@@ -324,18 +360,82 @@ window.switchTab=function(tab){
   if(tab==='analytics') loadAnalytics();
 };
 
+// 將刪除工具重設回密碼鎖狀態
+function lockClearData(){
+  if (_clearDataIdleTimer) { clearTimeout(_clearDataIdleTimer); _clearDataIdleTimer = null; }
+  const lock = document.getElementById('clear-data-lock');
+  const tools = document.getElementById('clear-data-tools');
+  const pw = document.getElementById('clear-data-pw');
+  const msg = document.getElementById('clear-data-msg');
+  if (lock)  lock.style.display = '';
+  if (tools) tools.style.display = 'none';
+  if (pw)    pw.value = '';
+  if (msg)   msg.textContent = '';
+}
+// 暴露到 window：admin-shop.js 會覆寫 window.switchTab，那個版本也要能呼叫到此函式
+window.lockClearData = lockClearData;
+
 // ── PWA ──
+function isIOSDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+}
+function isIOSSafari(){
+  if(!isIOSDevice()) return false;
+  const ua=navigator.userAgent;
+  return /Safari/i.test(ua) && !/(CriOS|FxiOS|EdgiOS|OPiOS|GSA|Line|FBA[NV]|FBIOS|Instagram|MicroMessenger|DuckDuckGo|YaBrowser)/i.test(ua);
+}
+function isStandalonePWA(){
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
 window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); window._deferredInstall=e; if(document.getElementById('screen-app').classList.contains('active')) document.getElementById('btn-shop-install').style.display='flex'; });
 window.handleShopInstall=async function(){
-  if(window.matchMedia('(display-mode: standalone)').matches){alert('已在主畫面！');return;}
+  if(isStandalonePWA()){ alert(shopLang==='zh'?'已在主畫面！':'Already on home screen!'); return; }
   if(window._deferredInstall){ if(!confirm(shopLang==='zh'?'加入 BINI Backend 到主畫面？':'Add BINI Backend to Home Screen?'))return; window._deferredInstall.prompt(); await window._deferredInstall.userChoice; window._deferredInstall=null; }
-  else alert('iOS: Safari 下方 □↑ → 加入主畫面 → 名稱「BINI Backend」');
+  else if(isIOSDevice() && !isIOSSafari()){
+    let copied=false;
+    try{ await navigator.clipboard?.writeText(location.href.split('#')[0]); copied=true; }catch(e){}
+    alert(shopLang==='zh'
+      ? '⚠️ 請改用「Safari」開啟本頁\n\niOS 只有 Safari 能「加入主畫面」並啟用推播通知，目前的瀏覽器（如 Chrome）做不到。\n\n'+(copied?'已複製網址，請：\n1. 開啟 Safari 貼上網址前往\n':'1. 用 Safari 開啟本頁網址\n')+'2. 點畫面下方「分享」按鈕 □↑\n3. 往下滑，選「加入主畫面」'
+      : '⚠️ Please open this page in Safari\n\nOn iOS, only Safari can Add to Home Screen & enable push. Other browsers (e.g. Chrome) cannot.\n\n'+(copied?'The URL has been copied:\n1. Open Safari and paste the URL\n':'1. Open this page in Safari\n')+'2. Tap Share □↑\n3. Choose "Add to Home Screen"');
+  }
+  else if(isIOSDevice()){
+    alert(shopLang==='zh'
+      ? 'iOS 加入主畫面步驟：\n1. 點畫面下方「分享」按鈕 □↑\n2. 往下滑，選「加入主畫面」\n3. 確認名稱「BINI Backend」後點「新增」'
+      : 'Add to Home Screen (iOS):\n1. Tap Share □↑\n2. Scroll and tap "Add to Home Screen"\n3. Confirm "BINI Backend" and tap Add');
+  }
+  else alert(shopLang==='zh'?'請從瀏覽器選單選擇「安裝」或「加入主畫面」':'Use your browser menu: Install / Add to Home Screen');
 };
 
 // ── 會員人數 ──
-async function loadMemberCount(){
-  try{ const snap=await getDocs(collection(db,'members')); document.getElementById('member-count').textContent=snap.size.toLocaleString(); }
-  catch(e){ console.error(e); }
+// 數字翻頁動畫：從目前顯示值漸進到目標值
+function animateNumber(el, to, opts = {}) {
+  if (!el || typeof to !== 'number' || !isFinite(to)) return;
+  const duration = opts.duration ?? 700;
+  const isInt = opts.isInt ?? Number.isInteger(to);
+  const format = (n) => isInt ? Math.round(n).toLocaleString() : (Math.round(n * 10) / 10).toFixed(1);
+  const from = parseFloat((el.textContent || '0').replace(/[^\d.-]/g, '')) || 0;
+  if (Math.abs(from - to) < 0.05) { el.textContent = format(to); return; }
+  if (el._animRaf) cancelAnimationFrame(el._animRaf);
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = format(from + (to - from) * eased);
+    if (t < 1) el._animRaf = requestAnimationFrame(tick);
+    else el._animRaf = null;
+  };
+  el._animRaf = requestAnimationFrame(tick);
+}
+
+// 即時監聽會員數：新會員註冊時 admin 端會立刻看到數字動畫往上跑
+let _memberCountUnsub = null;
+function loadMemberCount(){
+  if (_memberCountUnsub) _memberCountUnsub();
+  _memberCountUnsub = onSnapshot(
+    collection(db,'members'),
+    (snap) => animateNumber(document.getElementById('member-count'), snap.size, { isInt: true }),
+    (err) => console.error('memberCount listener:', err.message)
+  );
 }
 
 // ── QR 產生（新流程：只含 token，無金額）──
@@ -871,6 +971,55 @@ function getAdminFunctions() {
   return _functions;
 }
 
+// 手動觸發今日生日推播（推廣分頁按鈕）。
+// 排程每天 08:00 自動執行，但若會員在 08:00 之後才註冊、或上次推播失敗（NotRegistered），
+// 用此按鈕可立即補發。
+window.triggerBirthdayNow = async function() {
+  const btn = document.getElementById('btn-trigger-birthday');
+  const msgEl = document.getElementById('birthday-trigger-msg');
+  const confirmTxt = shopLang === 'zh'
+    ? '確定要立即發送今日所有生日會員的推播嗎？\n（重複按會重複發送）'
+    : "Send today's birthday push to all matched members now?\n(Re-clicking will resend)";
+  if (!confirm(confirmTxt)) return;
+
+  if (btn) {
+    btn.disabled = true;
+    const span = btn.querySelector('span');
+    if (span) span.textContent = shopLang === 'zh' ? '發送中…' : 'Sending…';
+  }
+  if (msgEl) { msgEl.style.color = '#888'; msgEl.textContent = ''; }
+
+  try {
+    // 生日推播函式部署在 us-central1，需明確指定
+    const fns = getFunctions(auth.app, 'us-central1');
+    const r = await httpsCallable(fns, 'adminTriggerBirthdayGreeting')();
+    const d = r?.data || {};
+    if (msgEl) {
+      if (!d.matched) {
+        msgEl.style.color = '#888';
+        msgEl.textContent = shopLang === 'zh' ? '今日無生日會員' : 'No member with birthday today';
+      } else {
+        msgEl.style.color = '#2d8a4e';
+        msgEl.textContent = shopLang === 'zh'
+          ? `✅ 對 ${d.matched} 位生日會員送出推播（成功 ${d.sent}）`
+          : `✅ Sent to ${d.matched} birthday member(s) (success: ${d.sent})`;
+      }
+    }
+  } catch (e) {
+    console.error('triggerBirthdayNow:', e);
+    if (msgEl) {
+      msgEl.style.color = '#c0392b';
+      msgEl.textContent = `❌ ${e.message || e.code || (shopLang==='zh'?'發送失敗':'Send failed')}`;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      const span = btn.querySelector('span');
+      if (span) span.textContent = shopLang === 'zh' ? '🎂 立即發送今日生日推播' : "🎂 Send Today's Birthday Push Now";
+    }
+  }
+};
+
 async function sendPushToAll(title, body, type='announcement', url='/') {
   try {
     // 寫入 notifications → Cloud Function 觸發推播
@@ -898,7 +1047,8 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 
 // ── 設定頁：集點規則 ─────────────────────────
 window.updateSettingsPreview = function() {
-  const baseUnit = Number(document.getElementById('settings-base-unit')?.value) || 200;
+  const baseUnit   = Number(document.getElementById('settings-base-unit')?.value)   || 200;
+  const basePoints = Number(document.getElementById('settings-base-points')?.value) || 1;
   const rates = {
     normal: Number(document.getElementById('rate-normal')?.value) || 1.0,
     vip:    Number(document.getElementById('rate-vip')?.value)    || 1.3,
@@ -913,9 +1063,11 @@ window.updateSettingsPreview = function() {
     { key:'vvip',   label:'🌟 VVIP' },
     { key:'vvvip',  label:'💎 VVVIP' },
   ];
-  preview.innerHTML = tiers.map(t =>
-    `<div>NT$${baseUnit} × ${rates[t.key]}x = <strong>${+(rates[t.key]).toFixed(1)} 點</strong>　${t.label}</div>`
-  ).join('');
+  preview.innerHTML = tiers.map(t => {
+    const pts = basePoints * rates[t.key];
+    const ptsStr = Number.isInteger(pts) ? pts : pts.toFixed(1);
+    return `<div>NT$${baseUnit} × ${basePoints}點 × ${rates[t.key]}x = <strong>${ptsStr} 點</strong>　${t.label}</div>`;
+  }).join('');
 };
 
 window.savePointSettings = async function() {
@@ -923,15 +1075,20 @@ window.savePointSettings = async function() {
   const msg = document.getElementById('settings-save-msg');
   btn.disabled = true;
   try {
-    const baseUnit = Number(document.getElementById('settings-base-unit')?.value) || 200;
+    const baseUnit   = Number(document.getElementById('settings-base-unit')?.value)   || 200;
+    const basePoints = Number(document.getElementById('settings-base-points')?.value) || 1;
     const rates = {
       normal: Number(document.getElementById('rate-normal')?.value) || 1.0,
       vip:    Number(document.getElementById('rate-vip')?.value)    || 1.3,
       vvip:   Number(document.getElementById('rate-vvip')?.value)   || 1.5,
       vvvip:  Number(document.getElementById('rate-vvvip')?.value)  || 2.0,
     };
-    await setDoc(doc(db,'config','point_rules'), { baseUnit, rates, updatedAt: serverTimestamp() }, { merge: true });
-    msg.textContent = '✅ 已儲存'; msg.style.color = '#2d8a4e';
+    await setDoc(doc(db,'config','point_rules'), { baseUnit, basePoints, rates, updatedAt: serverTimestamp() }, { merge: true });
+    // 儲存後立即生效，下一筆 confirmAmount 就會用新值
+    BASE_UNIT   = baseUnit;
+    BASE_POINTS = basePoints;
+    TIER_RATES  = rates;
+    msg.textContent = '✅ 已儲存（立即生效）'; msg.style.color = '#2d8a4e';
     setTimeout(() => { msg.textContent = ''; }, 2500);
   } catch(e) {
     msg.textContent = `❌ 儲存失敗：${e.message}`; msg.style.color = '#c0392b';
@@ -943,8 +1100,16 @@ async function loadPointSettings() {
     const snap = await getDoc(doc(db,'config','point_rules'));
     if (!snap.exists()) { updateSettingsPreview(); return; }
     const d = snap.data();
-    if (d.baseUnit) { const el = document.getElementById('settings-base-unit'); if(el) el.value = d.baseUnit; }
+    if (d.baseUnit) {
+      BASE_UNIT = d.baseUnit;
+      const el = document.getElementById('settings-base-unit'); if(el) el.value = d.baseUnit;
+    }
+    if (d.basePoints) {
+      BASE_POINTS = d.basePoints;
+      const el = document.getElementById('settings-base-points'); if(el) el.value = d.basePoints;
+    }
     if (d.rates) {
+      TIER_RATES = { ...TIER_RATES, ...d.rates };
       ['normal','vip','vvip','vvvip'].forEach(k => {
         const el = document.getElementById(`rate-${k}`); if(el && d.rates[k] != null) el.value = d.rates[k];
       });
@@ -992,6 +1157,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── 清除測試資料 ─────────────────────────────
 // 隱藏功能：需輸入密碼才顯示刪除按鈕，避免誤按
 const CLEAR_DATA_PASSWORD = 'yellowtaxi328';
+// 刪除工具的閒置自動上鎖計時器：解鎖/操作後 15 秒沒按按鈕就自動回鎖
+let _clearDataIdleTimer = null;
+function armClearDataTimer(){
+  if (_clearDataIdleTimer) clearTimeout(_clearDataIdleTimer);
+  _clearDataIdleTimer = setTimeout(() => { lockClearData(); }, 15000);
+}
+
 window.unlockClearData = function() {
   const input = document.getElementById('clear-data-pw');
   const msg = document.getElementById('clear-data-msg');
@@ -1003,12 +1175,16 @@ window.unlockClearData = function() {
   document.getElementById('clear-data-tools').style.display = '';
   if (input) input.value = '';
   if (msg) msg.textContent = '';
+  armClearDataTimer();
 };
 
 window.clearTestData = async function(collectionName) {
-  const msg = document.getElementById('clear-data-msg');
-  const label = { announcements:'公告', broadcasts:'廣播', chats:'客服訊息' }[collectionName] || collectionName;
-  if (!confirm(`確定要刪除所有「${label}」嗎？此操作不可復原。`)) return;
+  // 先停掉閒置計時器，避免 confirm/刪除過程中突然被鎖；完成後再重新計時
+  if (_clearDataIdleTimer) { clearTimeout(_clearDataIdleTimer); _clearDataIdleTimer = null; }
+  try {
+    const msg = document.getElementById('clear-data-msg');
+    const label = { announcements:'公告', broadcasts:'廣播', chats:'客服訊息' }[collectionName] || collectionName;
+    if (!confirm(`確定要刪除所有「${label}」嗎？此操作不可復原。`)) return;
   msg.textContent = '刪除中…'; msg.style.color = '#888';
   try {
     const snap = await getDocs(collection(db, collectionName));
@@ -1026,24 +1202,32 @@ window.clearTestData = async function(collectionName) {
   } catch(e) {
     msg.textContent = `❌ 刪除失敗：${e.message}`; msg.style.color = '#c0392b';
   }
+  } finally {
+    armClearDataTimer();
+  }
 };
 
 window.clearTestProducts = async function() {
-  const msg = document.getElementById('clear-data-msg');
-  if (!confirm('確定要刪除所有含「測試」字樣的商品嗎？此操作不可復原。')) return;
-  msg.textContent = '刪除中…'; msg.style.color = '#888';
+  if (_clearDataIdleTimer) { clearTimeout(_clearDataIdleTimer); _clearDataIdleTimer = null; }
   try {
-    const snap = await getDocs(collection(db, 'products'));
-    let count = 0;
-    for (const d of snap.docs) {
-      const name = d.data().name || '';
-      if (name.includes('測試') || name.toLowerCase().includes('test')) {
-        await deleteDoc(d.ref);
-        count++;
+    const msg = document.getElementById('clear-data-msg');
+    if (!confirm('確定要刪除所有含「測試」字樣的商品嗎？此操作不可復原。')) return;
+    msg.textContent = '刪除中…'; msg.style.color = '#888';
+    try {
+      const snap = await getDocs(collection(db, 'products'));
+      let count = 0;
+      for (const d of snap.docs) {
+        const name = d.data().name || '';
+        if (name.includes('測試') || name.toLowerCase().includes('test')) {
+          await deleteDoc(d.ref);
+          count++;
+        }
       }
+      msg.textContent = `✅ 已刪除 ${count} 筆測試商品`; msg.style.color = '#2d8a4e';
+    } catch(e) {
+      msg.textContent = `❌ 刪除失敗：${e.message}`; msg.style.color = '#c0392b';
     }
-    msg.textContent = `✅ 已刪除 ${count} 筆測試商品`; msg.style.color = '#2d8a4e';
-  } catch(e) {
-    msg.textContent = `❌ 刪除失敗：${e.message}`; msg.style.color = '#c0392b';
+  } finally {
+    armClearDataTimer();
   }
 };

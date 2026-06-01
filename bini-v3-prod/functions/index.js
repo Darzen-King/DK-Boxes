@@ -5,7 +5,7 @@
 
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule }                    = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated }             = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineString, defineBoolean }   = require("firebase-functions/params");
 const admin  = require("firebase-admin");
 // Node 22 內建 fetch，不需要 node-fetch
@@ -39,20 +39,29 @@ const RULES = {
 };
 
 // ─────────────────────────────────────────────
+// FCM 錯誤碼：代表此 token 已失效（裝置移除 PWA、清快取、token 過期等），
+// 應從資料庫移除，避免之後每次推播都對同一個壞 token 重複失敗。
+const STALE_FCM_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
+
 async function sendPush(uid, title, body, data = {}) {
   try {
     const snap = await db.collection("push_tokens").doc(uid).get();
-    if (!snap.exists) return;
+    if (!snap.exists) return { success: false, sent: 0, failed: 0 };
     const d = snap.data();
 
-    // 收集所有有效 token（支援新版 tokens map 和舊版單一 token）
-    const tokens = [];
+    // 收集 token 並記住來源欄位路徑，以便失效時精準清除該欄位
+    const entries = []; // [{ token, path }]，path 為 doc 內的欄位路徑
     if (d.tokens && typeof d.tokens === "object") {
-      Object.values(d.tokens).forEach(t => { if (t) tokens.push(t); });
+      Object.entries(d.tokens).forEach(([k, t]) => {
+        if (t) entries.push({ token: t, path: `tokens.${k}` });
+      });
     } else if (d.token) {
-      tokens.push(d.token);
+      entries.push({ token: d.token, path: "token" });
     }
-    if (!tokens.length) return;
+    if (!entries.length) return { success: false, sent: 0, failed: 0 };
 
     // ⚠️ 純 data 訊息：不帶 notification 欄位，避免 FCM 自動顯示 + SW 各顯示一次（重複推播）
     // SW 的 onBackgroundMessage 統一負責顯示通知
@@ -70,15 +79,52 @@ async function sendPush(uid, title, body, data = {}) {
       },
     };
 
-    // 多 token 同時推播
-    if (tokens.length === 1) {
-      await admin.messaging().send({ ...msg, token: tokens[0] });
+    const stalePaths = [];
+    let sent = 0, failed = 0;
+
+    if (entries.length === 1) {
+      try {
+        await admin.messaging().send({ ...msg, token: entries[0].token });
+        sent = 1;
+      } catch (sendErr) {
+        failed = 1;
+        if (STALE_FCM_CODES.has(sendErr.code)) {
+          stalePaths.push(entries[0].path);
+        } else {
+          console.warn("Push failed:", sendErr.message);
+        }
+      }
     } else {
-      await admin.messaging().sendEachForMulticast({ ...msg, tokens });
+      const resp = await admin.messaging().sendEachForMulticast({ ...msg, tokens: entries.map(e => e.token) });
+      sent = resp.successCount;
+      failed = resp.failureCount;
+      resp.responses.forEach((r, i) => {
+        if (r.success) return;
+        const code = r.error?.code;
+        if (STALE_FCM_CODES.has(code)) stalePaths.push(entries[i].path);
+        else if (code) console.warn(`[push] uid=${uid} send error: ${code}`);
+      });
     }
-    console.log(`✅ Push sent to ${uid}: ${title}`);
+
+    // 自動清除失效 token
+    if (stalePaths.length) {
+      const updates = {};
+      stalePaths.forEach(p => { updates[p] = admin.firestore.FieldValue.delete(); });
+      try {
+        await db.collection("push_tokens").doc(uid).update(updates);
+        console.log(`[push] 已清除 ${stalePaths.length} 個失效 token (uid=${uid})`);
+      } catch (cleanErr) {
+        console.warn(`[push] 清除失效 token 失敗 uid=${uid}:`, cleanErr.message);
+      }
+    }
+
+    if (sent > 0) {
+      console.log(`✅ Push sent to ${uid}: ${title}`);
+    }
+    return { success: sent > 0, sent, failed };
   } catch (e) {
     console.warn("Push failed:", e.message);
+    return { success: false, sent: 0, failed: 0 };
   }
 }
 
@@ -142,16 +188,17 @@ async function checkAdmin(uid) {
 async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://bini-blooms-dev-admin.web.app") {
   try {
     const adminSnap = await db.collection("admin_tokens").get();
-    const tokens = [];
+    // 記下每個 token 來自哪位 admin 的哪個裝置鍵，以便失效時精準清除
+    const entries = []; // [{ token, adminUid, deviceKey }]
     adminSnap.forEach(doc => {
       const d = doc.data();
       if (d.devices && typeof d.devices === "object") {
-        Object.values(d.devices).forEach(device => {
-          if (device.token) tokens.push(device.token);
+        Object.entries(d.devices).forEach(([k, device]) => {
+          if (device?.token) entries.push({ token: device.token, adminUid: doc.id, deviceKey: k });
         });
       }
     });
-    if (!tokens.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
+    if (!entries.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
 
     const msg = {
       data: {
@@ -164,9 +211,31 @@ async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://b
         headers: { "apns-priority": "10" },
         payload: { aps: { sound: "default", "content-available": 1 } },
       },
-      tokens,
+      tokens: entries.map(e => e.token),
     };
     const result = await admin.messaging().sendEachForMulticast(msg);
+
+    // 收集失效 token，依 adminUid 分組清除（一個 admin 可能有多裝置）
+    const staleByAdmin = {}; // { adminUid: [deviceKey, ...] }
+    result.responses.forEach((r, i) => {
+      if (r.success) return;
+      const code = r.error?.code;
+      if (STALE_FCM_CODES.has(code)) {
+        const e = entries[i];
+        (staleByAdmin[e.adminUid] = staleByAdmin[e.adminUid] || []).push(e.deviceKey);
+      }
+    });
+    for (const [adminUid, keys] of Object.entries(staleByAdmin)) {
+      const updates = {};
+      keys.forEach(k => { updates[`devices.${k}`] = admin.firestore.FieldValue.delete(); });
+      try {
+        await db.collection("admin_tokens").doc(adminUid).update(updates);
+        console.log(`[adminPush] 已清除 ${keys.length} 個失效 token (adminUid=${adminUid})`);
+      } catch (cleanErr) {
+        console.warn(`[adminPush] 清除失敗 adminUid=${adminUid}:`, cleanErr.message);
+      }
+    }
+
     console.log(`✅ sendPushToAdmins: ${title}，成功 ${result.successCount}，失敗 ${result.failureCount}`);
   } catch (e) {
     console.warn("sendPushToAdmins failed:", e.message);
@@ -224,8 +293,8 @@ exports.confirmPoints = onCall({ region: "us-central1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }).commit();
 
-  await sendPush(memberUid, "🎉 集點成功！",
-    `您獲得了 ${rawPoints} 點！目前共有 ${newTotal} 點。`);
+  await sendPush(memberUid, "🎉 Points Earned! | 集點成功",
+    `You earned ${rawPoints} point(s)! Balance: ${newTotal}. | 您獲得 ${rawPoints} 點，目前共 ${newTotal} 點。`);
 
   // 更新本月排名
   try {
@@ -276,7 +345,7 @@ exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   await batchOps.commit();
-  await sendPush(uid, "🎁 兌換成功！", `已兌換：${reward.name_zh}`);
+  await sendPush(uid, "🎁 Redeemed! | 兌換成功", `Redeemed: ${reward.name_en || reward.name_zh} | 已兌換：${reward.name_zh}`);
   return { success: true };
 });
 
@@ -381,8 +450,8 @@ async function maybePayReferralReward(memberUid) {
     return { referrerUid: md.referredBy, paid: true };
   });
   if (result?.paid) {
-    await sendPush(result.referrerUid, "🎉 推薦獎勵到帳",
-      `您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
+    await sendPush(result.referrerUid, "🎉 Referral Reward | 推薦獎勵到帳",
+      `Your friend made their first purchase — you earned ${REWARD} points! | 您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
   }
 }
 
@@ -648,14 +717,14 @@ exports.createOrder = onCall({ region: "us-central1" }, async (request) => {
     type: "new_order",
     orderId,
     totalAmount: totalWithShipping,
-    message: `新訂單 ${orderId}，NT$${totalWithShipping}（含運費NT$${shippingFee}），取貨門市：${cvs.storeName}`,
+    message: `New order ${orderId} · NT$${totalWithShipping} (incl. shipping NT$${shippingFee}) · Pickup: ${cvs.storeName} | 新訂單 ${orderId}，NT$${totalWithShipping}（含運費 NT$${shippingFee}），取貨門市：${cvs.storeName}`,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     read: false,
   });
 
   // 推播通知店家端（新訂單）
   await sendPushToAdmins(
-    "🛍️ 新訂單！ New Order!",
+    "🛍️ New Order! | 新訂單",
     `NT$${totalWithShipping}｜${cvs.storeName}｜${cvs.name}`,
     { type: "new_order", orderId }
   );
@@ -819,10 +888,10 @@ exports.scheduledLowStockAlert = onSchedule(
       .where("stock","<=",5)
       .get();
     if (snap.size === 0) return;
-    const items = snap.docs.map(d => `${d.data().name}（庫存：${d.data().stock}）`).join("\n");
+    const items = snap.docs.map(d => `${d.data().name} (${d.data().stock})`).join("\n");
     await db.collection("admin_notifications").add({
       type: "low_stock",
-      message: `以下商品庫存偏低：\n${items}`,
+      message: `Low stock items | 低庫存商品：\n${items}`,
       count: snap.size,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       read: false,
@@ -880,8 +949,8 @@ exports.scheduledPointsExpiry = onSchedule(
           return deduct;
         });
         if (removed > 0) {
-          await sendPush(uid, "⏰ 點數到期通知",
-            `您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
+          await sendPush(uid, "⏰ Points Expired | 點數到期",
+            `${Number.isInteger(removed) ? removed : removed.toFixed(1)} point(s) have expired. | 您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
         }
       } catch (e) {
         console.error("[pointsExpiry] 扣點失敗 uid=" + uid, e.message);
@@ -903,14 +972,132 @@ exports.scheduledPointsExpiry = onSchedule(
     });
     for (const [uid, info] of Object.entries(remind)) {
       try {
-        await sendPush(uid, "⏰ 點數即將到期",
-          `您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握時間使用！`);
+        await sendPush(uid, "⏰ Points Expiring Soon | 點數即將到期",
+          `You have ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} point(s) expiring within 7 days — use them soon! | 您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握使用！`);
         const wb = db.batch();
         info.refs.forEach((r) => wb.update(r, { expiryReminded: true }));
         await wb.commit();
       } catch (e) {
         console.error("[pointsExpiry] 提醒失敗 uid=" + uid, e.message);
       }
+    }
+  }
+);
+
+// ── 每日生日推播：當天生日的會員收到祝賀 + 雙倍點提醒 ──────────
+// 生日當天消費集點本來就會自動加倍（見店家端 confirmAmount），這裡只負責主動提醒。
+
+// 台北時區「今天」的 {year, month, day}（兩位數字串）
+function todayTaipeiYMD() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  return {
+    y: parts.find(x => x.type === "year")?.value,
+    m: parts.find(x => x.type === "month")?.value,
+    d: parts.find(x => x.type === "day")?.value,
+  };
+}
+
+// 統一的生日推播內容
+const BIRTHDAY_PUSH_TITLE = "🎂 Happy Birthday! | 生日快樂";
+const BIRTHDAY_PUSH_BODY  = "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！";
+
+async function runBirthdayGreeting() {
+  const { y, m, d } = todayTaipeiYMD();
+  if (!m || !d) return { sent: 0, matched: 0 };
+  const todayStr = `${y}-${m}-${d}`;
+
+  const snap = await db.collection("members").get();
+  let sent = 0, matched = 0;
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const bday = data.birthday;
+    if (!bday || typeof bday !== "string") continue;
+    const p = bday.split("-");
+    if (p.length < 3) continue;
+    if (p[1].padStart(2, "0") !== m || p[2].padStart(2, "0") !== d) continue;
+    matched++;
+    try {
+      const r = await sendPush(doc.id, BIRTHDAY_PUSH_TITLE, BIRTHDAY_PUSH_BODY);
+      if (r && r.success) {
+        sent++;
+        // 標記今日已送，避免 onPushTokenWritten 後續觸發重複推播
+        await doc.ref.update({ birthdayPushSentDate: todayStr }).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
+    }
+  }
+  console.log(`[birthday] 推播完成，符合生日 ${matched} 位，送出 ${sent} 位`);
+  return { sent, matched };
+}
+
+exports.scheduledBirthdayGreeting = onSchedule(
+  { schedule: "every day 08:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => { await runBirthdayGreeting(); }
+);
+
+// 店家手動觸發：補發或測試「今天」的生日推播（每日 08:00 之外的時段也可送）
+exports.adminTriggerBirthdayGreeting = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  // 僅 admin 可呼叫
+  const adminSnap = await db.collection("admins").doc(request.auth.uid).get();
+  if (!adminSnap.exists || adminSnap.data().disabled === true) {
+    throw new HttpsError("permission-denied", "非管理員");
+  }
+  const result = await runBirthdayGreeting();
+  return { success: true, ...result };
+});
+
+// ── 自動補發：push_tokens 寫入時，若該會員今天生日且尚未送過，立即補發 ──
+// 情境：客人在「生日當天」才加入主畫面/開通知，08:00 排程當下 token 還不存在或失效，
+// 等他完成開通知（push_tokens 寫入）這一刻自動補上生日推播。
+exports.onPushTokenWritten_BirthdayCheck = onDocumentWritten(
+  { document: "push_tokens/{uid}", region: "us-central1" },
+  async (event) => {
+    const uid = event.params.uid;
+    const after = event.data?.after?.data();
+    if (!after) return; // 刪除事件，不處理
+
+    // 確認真的有 token 可推
+    const hasToken =
+      !!after.token ||
+      (after.tokens && typeof after.tokens === "object" &&
+        Object.values(after.tokens).some(t => !!t));
+    if (!hasToken) return;
+
+    try {
+      const memberRef = db.collection("members").doc(uid);
+      const memberSnap = await memberRef.get();
+      if (!memberSnap.exists) return;
+      const member = memberSnap.data();
+
+      const bday = member.birthday;
+      if (!bday || typeof bday !== "string") return;
+      const p = bday.split("-");
+      if (p.length < 3) return;
+
+      const { y, m, d } = todayTaipeiYMD();
+      if (!m || !d) return;
+      if (p[1].padStart(2, "0") !== m || p[2].padStart(2, "0") !== d) return;
+
+      const todayStr = `${y}-${m}-${d}`;
+      if (member.birthdayPushSentDate === todayStr) {
+        console.log(`[birthdayOnToken] uid=${uid} 今日已送過，略過`);
+        return;
+      }
+
+      console.log(`[birthdayOnToken] uid=${uid} 生日當天 token 寫入 → 立即補發`);
+      const r = await sendPush(uid, BIRTHDAY_PUSH_TITLE, BIRTHDAY_PUSH_BODY);
+      if (r && r.success) {
+        await memberRef.update({ birthdayPushSentDate: todayStr }).catch(() => {});
+        console.log(`[birthdayOnToken] uid=${uid} 補發成功`);
+      } else {
+        console.warn(`[birthdayOnToken] uid=${uid} sendPush 未送出（token 可能仍無效）`);
+      }
+    } catch (e) {
+      console.error(`[birthdayOnToken] uid=${uid} 失敗:`, e.message);
     }
   }
 );
@@ -980,8 +1167,8 @@ exports.onChatMessageCreated = onDocumentCreated(
     try {
       // 取得聊天室資訊
       const chatDoc = await db.collection("chats").doc(chatId).get();
-      const memberName = chatDoc.data()?.memberName || "會員";
-      const msgText = data.text || (data.imageUrl ? "[圖片]" : "新訊息");
+      const memberName = chatDoc.data()?.memberName || "Member";
+      const msgText = data.text || (data.imageUrl ? "[Image | 圖片]" : "New message | 新訊息");
 
       // 讀取所有 admin tokens
       const adminSnap = await db.collection("admin_tokens").get();

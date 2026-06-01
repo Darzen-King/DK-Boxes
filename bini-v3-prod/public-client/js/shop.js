@@ -203,6 +203,8 @@ const ShopPage = {
   },
 
   init() {
+    this._activePage = "shop-list";  // 回到商品列表時重設，避免語言切換誤跳到我的訂單
+    const si = document.getElementById("shop-search-input"); if (si) si.placeholder = t("搜尋商品…","Search products…");
     ShopUI.updateCartBadge();
     // 必須登入後才能讀取商品
     if (!auth.currentUser) {
@@ -228,7 +230,7 @@ const ShopPage = {
       const snap = await ShopAPI.getProducts(this.currentCategory, this.lastProductDoc);
       if (reset) container.innerHTML = "";
       if (snap.empty && reset) {
-        container.innerHTML = '<p class="shop-empty">目前沒有商品</p>';
+        container.innerHTML = `<p class="shop-empty">${t("目前沒有商品","No products available")}</p>`;
         return;
       }
       snap.docs.forEach(doc => {
@@ -256,7 +258,7 @@ const ShopPage = {
     const bar = document.getElementById("shop-category-bar");
     if (!bar) return;
     bar.innerHTML = `
-<button class="cat-tab ${!this.currentCategory ? "active" : ""}" onclick="ShopPage.filterCategory(null)">全部</button>
+<button class="cat-tab ${!this.currentCategory ? "active" : ""}" onclick="ShopPage.filterCategory(null)">${t("全部","All")}</button>
 ${cats.map(c => `<button class="cat-tab ${this.currentCategory===c?"active":""}" onclick="ShopPage.filterCategory('${c}')">${c}</button>`).join("")}`;
   },
 
