@@ -659,12 +659,15 @@ window.exportExcel=async function(){
   try{
     showToast(shopLang==='zh'?'準備匯出...':'Preparing export...');
     const [memberSnap,txSnap]=await Promise.all([getDocs(collection(db,'members')),getDocs(collection(db,'transactions'))]);
+    // 先建 uid → 姓名 映射，供交易記錄補上客戶姓名
+    const nameByUid={}; memberSnap.forEach(d=>{ nameByUid[d.id]=d.data().name||''; });
     // 會員資料
     const members=[];
     memberSnap.forEach(d=>{ const m=d.data(); members.push({UID:d.id,姓名:m.name,手機:m.phone,生日:m.birthday||'',會員等級:TIERS.find(ti=>ti.id===m.tier)?.name||m.tier,累積消費:m.totalSpent||0,目前點數:m.points||0,消費次數:m.visitCount||0,折抵次數:m.redeemCount||0,加入日期:m.joinedAt?m.joinedAt.toDate().toLocaleDateString('zh-TW'):''}); });
-    // 交易記錄
+    // 交易記錄（補上客戶姓名欄位）
+    const typeLabel=(t)=>({earn:'集點',deduct:'折抵',redeem:'兌換',welcome:'歡迎贈點',referral_signup:'推薦註冊',referral_reward:'推薦獎勵',expire:'點數到期',rank_bonus:'週排行加贈'}[t]||t||'');
     const txs=[];
-    txSnap.forEach(d=>{ const tx=d.data(); txs.push({日期:tx.createdAt?tx.createdAt.toDate().toLocaleDateString('zh-TW'):'',時間:tx.createdAt?tx.createdAt.toDate().toLocaleTimeString('zh-TW'):'',類型:tx.type==='earn'?'集點':tx.type==='deduct'?'折抵':'兌換',點數:tx.points,消費金額:tx.amount||'',說明:tx.desc||'',會員等級:tx.tier||''}); });
+    txSnap.forEach(d=>{ const tx=d.data(); txs.push({日期:tx.createdAt?tx.createdAt.toDate().toLocaleDateString('zh-TW'):'',時間:tx.createdAt?tx.createdAt.toDate().toLocaleTimeString('zh-TW'):'',客戶姓名:nameByUid[tx.uid]||'',類型:typeLabel(tx.type),點數:tx.points,消費金額:tx.amount||'',說明:tx.desc||'',會員等級:tx.tier||''}); });
 
     // 用純 JS 產生 CSV（不依賴 xlsx 庫）
     const toCSV=(data)=>{
