@@ -449,13 +449,15 @@ input:focus,textarea:focus{border-color:var(--pink)}
         <div class="card-title"><span data-zh="💰 集點規則設定" data-en="💰 Point Settings">💰 集點規則設定</span></div>
         <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.7"><span data-zh="設定消費金額與點數的對應關係，以及各會員等級的點數倍數。儲存後客戶端將即時更新。" data-en="Set the spending-to-points ratio and tier multipliers. Changes apply instantly to the customer app.">設定消費金額與點數的對應關係，以及各會員等級的點數倍數。儲存後客戶端將即時更新。</span></p>
 
-        <label><span data-zh="基本單位金額（NT$）" data-en="Base Unit Amount (NT$)">基本單位金額（NT$）</span></label>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          <span style="font-size:13px;color:#888">NT$</span>
-          <input type="number" id="settings-base-unit" min="1" step="1" style="width:120px" value="200" oninput="updateSettingsPreview()">
-          <span style="font-size:13px;color:#888"><span data-zh="消費 = 基礎 1 點" data-en="spent = 1 base point">消費 = 基礎 1 點</span></span>
+        <label><span data-zh="基礎集點規則" data-en="Base Point Rule">基礎集點規則</span></label>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+          <span style="font-size:13px;color:#888"><span data-zh="每消費 NT$" data-en="Every NT$">每消費 NT$</span></span>
+          <input type="number" id="settings-base-unit" min="1" step="1" style="width:90px" value="200" oninput="updateSettingsPreview()">
+          <span style="font-size:13px;color:#888"><span data-zh="給" data-en="=">給</span></span>
+          <input type="number" id="settings-base-points" min="0.1" step="0.1" style="width:80px" value="1" oninput="updateSettingsPreview()">
+          <span style="font-size:13px;color:#888"><span data-zh="點（基礎）" data-en="point(s) (base)">點（基礎）</span></span>
         </div>
-        <p style="font-size:12px;color:#b07080;margin-bottom:16px"><span data-zh="例：設為 200，表示每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）" data-en="e.g. 200 means every NT$200 earns 1 base point × tier multiplier">例：設為 200，表示每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）</span></p>
+        <p style="font-size:12px;color:#b07080;margin-bottom:16px"><span data-zh="例：設為 NT$200 給 1 點，每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）。NT$200 給 3 點可做為加碼活動。" data-en="e.g. NT$200 = 1 base point × tier multiplier. Set NT$200 = 3 points for promotional events.">例：設為 NT$200 給 1 點，每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）。NT$200 給 3 點可做為加碼活動。</span></p>
 
         <label><span data-zh="各會員等級點數倍數" data-en="Points Multiplier per Tier">各會員等級點數倍數</span></label>
         <div id="tier-rate-inputs" style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">

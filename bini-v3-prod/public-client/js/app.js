@@ -60,13 +60,17 @@ window.animateNumber = function(el, to, opts = {}) {
 // VAPID Key 來自 Firebase Console → Project Settings → Cloud Messaging → 網路推播憑證
 // 截圖中可見的 Key（請確認完整 Key 後填入）
 const VAPID_KEY = 'BHTHLzWPh4B-4m_moKfu7jCUwfqeT-r8vTbtUQct3EMAiaUKz45YbexrWx_xp72plFRNSq0ss2hmhWMvv13m2F4';
+// 等級資訊（門檻、圖示、名稱固定）；倍率與 base 規則來自 Firestore config/point_rules
 const TIERS = [
-  { id:'normal', name:{zh:'一般會員',en:'Member'},    icon:'🛍️', minSpent:0,     maxSpent:10000,  rate:1.0, label:{zh:'消費 NT$200 = 1 點',en:'NT$200 = 1 pt'} },
-  { id:'vip',    name:{zh:'VIP 會員',en:'VIP'},       icon:'⭐', minSpent:10001, maxSpent:15000,  rate:1.3, label:{zh:'消費 NT$200 = 1.3 點',en:'NT$200 = 1.3 pts'} },
-  { id:'vvip',   name:{zh:'VVIP 會員',en:'VVIP'},     icon:'🌟', minSpent:15001, maxSpent:25000,  rate:1.5, label:{zh:'消費 NT$200 = 1.5 點',en:'NT$200 = 1.5 pts'} },
-  { id:'vvvip',  name:{zh:'VVVIP 會員',en:'VVVIP'},   icon:'💎', minSpent:25001, maxSpent:Infinity, rate:2.0, label:{zh:'消費 NT$200 = 2 點',en:'NT$200 = 2 pts'} },
+  { id:'normal', name:{zh:'一般會員',en:'Member'},  icon:'🛍️', minSpent:0,     maxSpent:10000,    rate:1.0 },
+  { id:'vip',    name:{zh:'VIP 會員',en:'VIP'},     icon:'⭐', minSpent:10001, maxSpent:15000,    rate:1.3 },
+  { id:'vvip',   name:{zh:'VVIP 會員',en:'VVIP'},   icon:'🌟', minSpent:15001, maxSpent:25000,    rate:1.5 },
+  { id:'vvvip',  name:{zh:'VVVIP 會員',en:'VVVIP'},icon:'💎', minSpent:25001, maxSpent:Infinity, rate:2.0 },
 ];
-const BASE_UNIT = 200;         // 每 NT$200 計算一次
+// 預設值，loadPointRules() 會從 Firestore 覆寫
+let BASE_UNIT   = 200;
+let BASE_POINTS = 1;
+let TIER_RATES  = { normal:1.0, vip:1.3, vvip:1.5, vvvip:2.0 };
 const POINTS_EXPIRY_DAYS = 90; // 點數有效期 90 天（3個月）
 
 function getTierBySpent(spent) {
@@ -75,8 +79,31 @@ function getTierBySpent(spent) {
   }
   return TIERS[0];
 }
+function rateOf(tier) { return TIER_RATES[tier.id] ?? tier.rate ?? 1.0; }
 function calcPoints(amount, tier) {
-  return Math.round(Math.floor(amount / BASE_UNIT) * tier.rate * 10) / 10; // 先取整數單位再乘倍率
+  return Math.round(Math.floor(amount / BASE_UNIT) * BASE_POINTS * rateOf(tier) * 10) / 10;
+}
+// 依目前 BASE_UNIT / BASE_POINTS / TIER_RATES 動態產生等級規則文字
+function tierLabel(tier) {
+  const pts = BASE_POINTS * rateOf(tier);
+  const ptsStr = Number.isInteger(pts) ? pts : Math.round(pts * 10) / 10;
+  return {
+    zh: `消費 NT$${BASE_UNIT} = ${ptsStr} 點`,
+    en: `NT$${BASE_UNIT} = ${ptsStr} pt${pts === 1 ? '' : 's'}`,
+  };
+}
+// 載入店家的集點規則（任何登入會員都可讀）
+async function loadPointRules() {
+  try {
+    const snap = await getDoc(doc(db, 'config', 'point_rules'));
+    if (!snap.exists()) return;
+    const d = snap.data();
+    if (d.baseUnit)   BASE_UNIT   = d.baseUnit;
+    if (d.basePoints) BASE_POINTS = d.basePoints;
+    if (d.rates)      TIER_RATES  = { ...TIER_RATES, ...d.rates };
+    // 重新渲染依賴規則的 UI
+    if (typeof renderTierRules === 'function') renderTierRules();
+  } catch(e) { console.warn('loadPointRules:', e.message); }
 }
 function phoneToEmail(p) { return `m${p.replace(/\D/g,'')}@bini-blooms.app`; }
 function getTodayCode() {
@@ -138,9 +165,10 @@ function t(zh, en) { return lang==='zh' ? zh : en; }
 
 function renderTierRules() {
   const el = document.getElementById('tier-rules-display'); if(!el) return;
-  el.innerHTML = TIERS.map(ti =>
-    `${ti.icon} ${lang==='zh'?ti.name.zh:ti.name.en}：${lang==='zh'?ti.label.zh:ti.label.en}`
-  ).join('<br>');
+  el.innerHTML = TIERS.map(ti => {
+    const lbl = tierLabel(ti);
+    return `${ti.icon} ${lang==='zh'?ti.name.zh:ti.name.en}：${lang==='zh'?lbl.zh:lbl.en}`;
+  }).join('<br>');
 }
 
 // ── 狀態 ──
@@ -195,7 +223,7 @@ onAuthStateChanged(auth, async user => {
     const snap = await getDoc(doc(db,'members',user.uid));
     if (snap.exists()) {
       memberData = snap.data();
-      showApp(); loadHomeData(); checkUnread(); subscribeMemberData();
+      showApp(); loadPointRules(); loadHomeData(); checkUnread(); subscribeMemberData();
       // 推播權限判斷（iOS PWA 必須透過使用者手勢觸發）
       setTimeout(() => {
         const perm = ('Notification' in window) ? Notification.permission : 'unsupported';

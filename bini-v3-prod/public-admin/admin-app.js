@@ -26,11 +26,17 @@ const TIERS = [
   { id:'vvip',   name:'VVIP 會員',nameEn:'VVIP',    minSpent:15001, maxSpent:25000,  rate:1.5 },
   { id:'vvvip',  name:'VVVIP 會員',nameEn:'VVVIP',  minSpent:25001,maxSpent:Infinity,rate:2.0},
 ];
-const BASE_UNIT         = 200;
-const POINTS_EXPIRY_DAYS= 90;
+// 以下為「預設值」，loadPointSettings() 會從 Firestore config/point_rules 覆寫
+// 都用 let，讓設定頁儲存後立刻生效，不需重新整理
+let BASE_UNIT          = 200;
+let BASE_POINTS        = 1;
+let TIER_RATES         = { normal:1.0, vip:1.3, vvip:1.5, vvvip:2.0 };
+const POINTS_EXPIRY_DAYS = 90;
 
 function getTierBySpent(s){ for(let i=TIERS.length-1;i>=0;i--){if(s>=TIERS[i].minSpent)return TIERS[i];}return TIERS[0]; }
-function calcPoints(amount,tier){ return Math.round(Math.floor(amount/BASE_UNIT)*tier.rate*10)/10; } // 先取整數單位再乘倍率
+function rateOf(tier){ return TIER_RATES[tier.id] ?? tier.rate ?? 1.0; }
+// 公式：floor(消費 / BASE_UNIT) × BASE_POINTS × 等級倍率
+function calcPoints(amount,tier){ return Math.round(Math.floor(amount/BASE_UNIT) * BASE_POINTS * rateOf(tier) * 10) / 10; }
 
 let currentAdmin=null, inboxUnsub=null, chatUnsub=null, pendingQRUnsub=null;
 let inboxDocs=[], inboxShowHidden=false;
@@ -1041,7 +1047,8 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 
 // ── 設定頁：集點規則 ─────────────────────────
 window.updateSettingsPreview = function() {
-  const baseUnit = Number(document.getElementById('settings-base-unit')?.value) || 200;
+  const baseUnit   = Number(document.getElementById('settings-base-unit')?.value)   || 200;
+  const basePoints = Number(document.getElementById('settings-base-points')?.value) || 1;
   const rates = {
     normal: Number(document.getElementById('rate-normal')?.value) || 1.0,
     vip:    Number(document.getElementById('rate-vip')?.value)    || 1.3,
@@ -1056,9 +1063,11 @@ window.updateSettingsPreview = function() {
     { key:'vvip',   label:'🌟 VVIP' },
     { key:'vvvip',  label:'💎 VVVIP' },
   ];
-  preview.innerHTML = tiers.map(t =>
-    `<div>NT$${baseUnit} × ${rates[t.key]}x = <strong>${+(rates[t.key]).toFixed(1)} 點</strong>　${t.label}</div>`
-  ).join('');
+  preview.innerHTML = tiers.map(t => {
+    const pts = basePoints * rates[t.key];
+    const ptsStr = Number.isInteger(pts) ? pts : pts.toFixed(1);
+    return `<div>NT$${baseUnit} × ${basePoints}點 × ${rates[t.key]}x = <strong>${ptsStr} 點</strong>　${t.label}</div>`;
+  }).join('');
 };
 
 window.savePointSettings = async function() {
@@ -1066,15 +1075,20 @@ window.savePointSettings = async function() {
   const msg = document.getElementById('settings-save-msg');
   btn.disabled = true;
   try {
-    const baseUnit = Number(document.getElementById('settings-base-unit')?.value) || 200;
+    const baseUnit   = Number(document.getElementById('settings-base-unit')?.value)   || 200;
+    const basePoints = Number(document.getElementById('settings-base-points')?.value) || 1;
     const rates = {
       normal: Number(document.getElementById('rate-normal')?.value) || 1.0,
       vip:    Number(document.getElementById('rate-vip')?.value)    || 1.3,
       vvip:   Number(document.getElementById('rate-vvip')?.value)   || 1.5,
       vvvip:  Number(document.getElementById('rate-vvvip')?.value)  || 2.0,
     };
-    await setDoc(doc(db,'config','point_rules'), { baseUnit, rates, updatedAt: serverTimestamp() }, { merge: true });
-    msg.textContent = '✅ 已儲存'; msg.style.color = '#2d8a4e';
+    await setDoc(doc(db,'config','point_rules'), { baseUnit, basePoints, rates, updatedAt: serverTimestamp() }, { merge: true });
+    // 儲存後立即生效，下一筆 confirmAmount 就會用新值
+    BASE_UNIT   = baseUnit;
+    BASE_POINTS = basePoints;
+    TIER_RATES  = rates;
+    msg.textContent = '✅ 已儲存（立即生效）'; msg.style.color = '#2d8a4e';
     setTimeout(() => { msg.textContent = ''; }, 2500);
   } catch(e) {
     msg.textContent = `❌ 儲存失敗：${e.message}`; msg.style.color = '#c0392b';
@@ -1086,8 +1100,16 @@ async function loadPointSettings() {
     const snap = await getDoc(doc(db,'config','point_rules'));
     if (!snap.exists()) { updateSettingsPreview(); return; }
     const d = snap.data();
-    if (d.baseUnit) { const el = document.getElementById('settings-base-unit'); if(el) el.value = d.baseUnit; }
+    if (d.baseUnit) {
+      BASE_UNIT = d.baseUnit;
+      const el = document.getElementById('settings-base-unit'); if(el) el.value = d.baseUnit;
+    }
+    if (d.basePoints) {
+      BASE_POINTS = d.basePoints;
+      const el = document.getElementById('settings-base-points'); if(el) el.value = d.basePoints;
+    }
     if (d.rates) {
+      TIER_RATES = { ...TIER_RATES, ...d.rates };
       ['normal','vip','vvip','vvvip'].forEach(k => {
         const el = document.getElementById(`rate-${k}`); if(el && d.rates[k] != null) el.value = d.rates[k];
       });
