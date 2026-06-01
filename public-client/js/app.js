@@ -151,6 +151,9 @@ function applyLang() {
   updateTopTitle();
   renderTierRules();
   if (typeof updateRankCountdown === 'function') updateRankCountdown();
+  if (_lastWeekRankSnap && typeof recomputeWeekRank === 'function') {
+    try { recomputeWeekRank(_lastWeekRankSnap); } catch(e) {}
+  }
   // 語言切換時重新渲染過期點數文字
   if (typeof loadExpiryInfo === 'function') { try { loadExpiryInfo(); } catch(e){} }
   // 更新歡迎卡語言
@@ -766,6 +769,28 @@ function recomputeWeekRank(snap) {
     }
   }
   if (countEl) countEl.textContent = myTxCount;
+
+  // 渲染本週 TOP 5（只顯示點數，不顯示客戶名以保護隱私）
+  const top5El = document.getElementById('rank-top5-list');
+  if (top5El) {
+    if (sorted.length === 0) {
+      top5El.innerHTML = `<div style="text-align:center;opacity:.6;font-size:12px;padding:4px 0">${t('本週尚無排名，快來成為第一名！','No rankings yet — be the first!')}</div>`;
+    } else {
+      const MEDALS = ['🥇','🥈','🥉','#4','#5'];
+      const top5 = sorted.slice(0, 5);
+      top5El.innerHTML = top5.map(([uid, pts], i) => {
+        const isMe = uid === currentUser.uid;
+        const ptsStr = Number.isInteger(pts) ? pts : pts.toFixed(1);
+        const youTag = isMe
+          ? ` <span style="background:rgba(255,255,255,.28);color:#fff;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px">${t('您','YOU')}</span>`
+          : '';
+        const rowStyle = isMe
+          ? 'background:rgba(255,255,255,.14);border-radius:6px;padding:4px 8px;margin:1px 0'
+          : 'padding:4px 8px;margin:1px 0';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;${rowStyle}"><span style="font-weight:600;font-size:14px">${MEDALS[i]}</span><span><strong>${ptsStr}</strong> ${t('點','pts')}${youTag}</span></div>`;
+      }).join('');
+    }
+  }
 }
 
 // ── 結算倒數提示：距離下一個週五 22:00（台北）還有多久 ──
@@ -810,7 +835,7 @@ function stopRankCountdown() {
   if (_rankCountdownTimer) { clearInterval(_rankCountdownTimer); _rankCountdownTimer = null; }
 }
 
-let weekRankUnsub = null;
+let weekRankUnsub = null, _lastWeekRankSnap = null;
 function subscribeWeekRank() {
   if (!currentUser) return;
   if (weekRankUnsub) { weekRankUnsub(); weekRankUnsub = null; }
@@ -818,7 +843,7 @@ function subscribeWeekRank() {
   // Firestore rules 允許任何登入者讀 type==='earn'
   weekRankUnsub = onSnapshot(
     query(collection(db, 'transactions'), where('type', '==', 'earn')),
-    (snap) => { try { recomputeWeekRank(snap); } catch(e) { console.warn('weekRank recompute:', e.message); } },
+    (snap) => { _lastWeekRankSnap = snap; try { recomputeWeekRank(snap); } catch(e) { console.warn('weekRank recompute:', e.message); } },
     (err) => console.warn('weekRank listener:', err.code || err.message)
   );
 }
