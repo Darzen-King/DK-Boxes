@@ -1209,7 +1209,7 @@ function showEarnModal(pts,amount,tier,newTotal,birthdayBonus=false,basePoints=0
   document.getElementById('modal-earn-detail').innerHTML=
     (birthdayBonus?`🎂 ${t('今天是您的生日，點數加倍贈送！','Birthday bonus: points doubled!')}${basePoints?`（${t('原','base')} ${Number.isInteger(basePoints)?basePoints:basePoints.toFixed(1)} ×2）`:''}<br>`:'')+
     `💳 ${t('消費','Spent')} NT$${amount.toLocaleString()}<br>`+
-    `${tier.icon} ${lang==='zh'?tier.name.zh:tier.name.en}（${lang==='zh'?tier.label.zh:tier.label.en}）<br>`+
+    `${tier.icon} ${lang==='zh'?tier.name.zh:tier.name.en}（${lang==='zh'?tierLabel(tier).zh:tierLabel(tier).en}）<br>`+
     `🏆 ${t('目前共','Total')} <strong>${Number.isInteger(newTotal)?newTotal.toLocaleString():newTotal.toFixed(1)}</strong> ${t('點','pts')}`;
   document.getElementById('modal-sub').textContent=t('點數有效期：獲得後3個月內','Points valid for 3 months');
   document.getElementById('modal-overlay').style.display='flex';
@@ -1476,7 +1476,8 @@ async function loadProfile() {
       document.getElementById('tier-to').textContent=lang==='zh'?nextTier.name.zh:nextTier.name.en;
       document.getElementById('tier-progress').textContent=`NT$${spent.toLocaleString()} / NT$${nextTier.minSpent.toLocaleString()}`;
       document.getElementById('tier-label').textContent=t(`距離 ${nextTier.name.zh} 還需消費 NT$${(nextTier.minSpent-spent).toLocaleString()}`,`NT$${(nextTier.minSpent-spent).toLocaleString()} more to reach ${nextTier.name.en}`);
-      document.getElementById('tier-next-rule').textContent=lang==='zh'?nextTier.label.zh:nextTier.label.en;
+      const _nextLbl=tierLabel(nextTier);
+      document.getElementById('tier-next-rule').textContent=lang==='zh'?_nextLbl.zh:_nextLbl.en;
     } else {
       document.getElementById('tier-bar').style.width='100%';
       document.getElementById('tier-label').textContent=t('已達最高等級 💎','Top tier reached 💎');
