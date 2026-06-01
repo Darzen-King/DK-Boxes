@@ -150,6 +150,7 @@ function applyLang() {
   const ci = document.getElementById('chat-input'); if(ci) ci.placeholder = lang==='zh'?'輸入訊息...':'Type a message...';
   updateTopTitle();
   renderTierRules();
+  if (typeof updateRankCountdown === 'function') updateRankCountdown();
   // 語言切換時重新渲染過期點數文字
   if (typeof loadExpiryInfo === 'function') { try { loadExpiryInfo(); } catch(e){} }
   // 更新歡迎卡語言
@@ -505,6 +506,7 @@ window.handleLogout = async function() {
   if (notificationsUnsub) { notificationsUnsub(); notificationsUnsub=null; }
   if (memberDocUnsub) { memberDocUnsub(); memberDocUnsub=null; }
   if (weekRankUnsub) { weekRankUnsub(); weekRankUnsub=null; }
+  stopRankCountdown();
   await signOut(auth);
 };
 
@@ -647,6 +649,7 @@ async function loadHomeData() {
     // 載入即將過期的點數批次
     await loadExpiryInfo();
     subscribeWeekRank(); // 即時週排行榜（背景訂閱）
+    startRankCountdown(); // 距離週五 22:00 結算的倒數
 
     // 新會員歡迎通知
     const welcomeEl = document.getElementById('welcome-bonus-card');
@@ -763,6 +766,48 @@ function recomputeWeekRank(snap) {
     }
   }
   if (countEl) countEl.textContent = myTxCount;
+}
+
+// ── 結算倒數提示：距離下一個週五 22:00（台北）還有多久 ──
+function updateRankCountdown() {
+  const el = document.getElementById('rank-countdown'); if (!el) return;
+  const nowMs = Date.now();
+  const t = new Date(nowMs + TAIPEI_OFFSET_HOURS_CLIENT * 3600 * 1000);
+  const dow = t.getUTCDay();
+  const todayFri22Ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 22, 0, 0)
+                     - TAIPEI_OFFSET_HOURS_CLIENT * 3600 * 1000;
+  const daysToFri = (5 - dow + 7) % 7;
+  let nextFri22Ms = todayFri22Ms + daysToFri * 86400000;
+  if (nextFri22Ms <= nowMs) nextFri22Ms += 7 * 86400000; // 已過今天的週五 22:00 就推到下週
+  const diffMs = nextFri22Ms - nowMs;
+  if (diffMs <= 0) { el.textContent = ''; return; }
+  const days  = Math.floor(diffMs / 86400000);
+  const hours = Math.floor((diffMs % 86400000) / 3600000);
+  const mins  = Math.floor((diffMs % 3600000) / 60000);
+  let zh, en;
+  if (days >= 1) {
+    zh = `⏰ 距離週五 22:00 結算還有 ${days} 天 ${hours} 小時`;
+    en = `⏰ Settlement in ${days}d ${hours}h`;
+  } else if (hours >= 1) {
+    zh = `⏰ 距離結算剩 ${hours} 小時 ${mins} 分`;
+    en = `⏰ Settlement in ${hours}h ${mins}m`;
+  } else if (mins >= 1) {
+    zh = `⏰ 結算倒數 ${mins} 分　衝刺中！`;
+    en = `⏰ Final sprint! ${mins}m left`;
+  } else {
+    zh = `⏰ 即將結算！`;
+    en = `⏰ Settling soon!`;
+  }
+  el.textContent = lang === 'zh' ? zh : en;
+}
+let _rankCountdownTimer = null;
+function startRankCountdown() {
+  if (_rankCountdownTimer) clearInterval(_rankCountdownTimer);
+  updateRankCountdown();
+  _rankCountdownTimer = setInterval(updateRankCountdown, 60000); // 每分鐘更新
+}
+function stopRankCountdown() {
+  if (_rankCountdownTimer) { clearInterval(_rankCountdownTimer); _rankCountdownTimer = null; }
 }
 
 let weekRankUnsub = null;
