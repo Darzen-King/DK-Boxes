@@ -1102,6 +1102,97 @@ exports.onPushTokenWritten_BirthdayCheck = onDocumentWritten(
   }
 );
 
+// ── 每週積點排行頒獎 ──────────
+// 每週五 22:00（台北）跑一次：計算上週五 22:00 ~ 本週五 22:00 之間，
+// 各會員 earn 點數總和，前 5 名分別加贈 5/4/3/2/1 點 + 推播。
+// 加贈用獨立 type='rank_bonus'，不會被下週排行算入（避免自增循環）。
+
+const TAIPEI_OFFSET_HOURS = 8;
+// 取得「最近 ≤ now 的週五 22:00 (台北)」對應的 UTC ms
+function getMostRecentFridayCutoffMs(now = new Date()) {
+  const nowMs = now.getTime();
+  const t = new Date(nowMs + TAIPEI_OFFSET_HOURS * 3600 * 1000);
+  // t 的 UTC 部分代表「台北本地時間」
+  const dow = t.getUTCDay(); // 0=Sun, 1=Mon, …, 5=Fri, 6=Sat
+  const todayFri22Ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 22, 0, 0)
+                     - TAIPEI_OFFSET_HOURS * 3600 * 1000;
+  const daysToFri = (5 - dow + 7) % 7;
+  let candidate = todayFri22Ms + daysToFri * 86400000;
+  while (candidate > nowMs) candidate -= 7 * 86400000;
+  return candidate;
+}
+
+exports.scheduledWeeklyRankPrize = onSchedule(
+  // cron 0 22 * * 5 = 每週五 22:00
+  { schedule: "0 22 * * 5", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => {
+    const end = getMostRecentFridayCutoffMs(); // 通常等於 now（22:00 觸發）
+    const start = end - 7 * 86400000;
+    console.log(`[weeklyRankPrize] 上週週期 [${new Date(start).toISOString()}, ${new Date(end).toISOString()})`);
+
+    const txSnap = await db.collection("transactions")
+      .where("type", "==", "earn")
+      .where("createdAt", ">=", admin.firestore.Timestamp.fromMillis(start))
+      .where("createdAt", "<",  admin.firestore.Timestamp.fromMillis(end))
+      .get();
+    console.log(`[weeklyRankPrize] 上週共 ${txSnap.size} 筆 earn`);
+
+    // 加總每位 uid 點數
+    const weekPts = {};
+    txSnap.forEach(d => {
+      const { uid, points } = d.data();
+      if (uid) weekPts[uid] = Math.round(((weekPts[uid] || 0) + (points || 0)) * 10) / 10;
+    });
+
+    const sorted = Object.entries(weekPts).sort((a, b) => b[1] - a[1]);
+    const top5 = sorted.slice(0, 5);
+    if (!top5.length) { console.log("[weeklyRankPrize] 上週無 earn，跳過頒獎"); return; }
+
+    const PRIZES = [5, 4, 3, 2, 1]; // 第 1~5 名
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 90 * 86400000); // 90 天有效
+    let awarded = 0;
+    for (let i = 0; i < top5.length; i++) {
+      const [uid, weekTotalPts] = top5[i];
+      const rank = i + 1;
+      const bonus = PRIZES[i];
+      try {
+        const txRef = db.collection("transactions").doc();
+        const batchRef = db.collection("point_batches").doc();
+        const memberRef = db.collection("members").doc(uid);
+        await db.batch()
+          .set(txRef, {
+            uid, type: "rank_bonus", points: bonus,
+            rank, weekTotalPts,
+            desc:   `本週積點第 ${rank} 名加贈 ${bonus} 點`,
+            descEn: `Top ${rank} this week — bonus ${bonus} pts`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+          .set(batchRef, {
+            uid, points: bonus, remaining: bonus,
+            earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+            expiresAt, source: "rank_bonus", txId: txRef.id,
+          })
+          .update(memberRef, {
+            points: admin.firestore.FieldValue.increment(bonus),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+          .commit();
+
+        await sendPush(
+          uid,
+          `🏆 Weekly Top ${rank}! | 本週第 ${rank} 名`,
+          `Congrats! You're #${rank} on this week's leaderboard — bonus ${bonus} pts! 🎉 | 恭喜獲得本週積點第 ${rank} 名，加贈 ${bonus} 點！`
+        );
+        awarded++;
+        console.log(`[weeklyRankPrize] 第 ${rank} 名 uid=${uid} 上週總點=${weekTotalPts} 加贈+${bonus}`);
+      } catch (e) {
+        console.error(`[weeklyRankPrize] 第 ${rank} 名 uid=${uid} 失敗:`, e.message);
+      }
+    }
+    console.log(`[weeklyRankPrize] 完成，共頒發 ${awarded} 位`);
+  }
+);
+
 // ── Firestore Trigger：notifications 新文件 → 自動推播 ──────────
 exports.onNotificationCreated = onDocumentCreated(
   { document: "notifications/{notifId}", region: "us-central1" },

@@ -504,6 +504,7 @@ window.handleLogout = async function() {
   if (chatUnsub) { chatUnsub(); chatUnsub=null; }
   if (notificationsUnsub) { notificationsUnsub(); notificationsUnsub=null; }
   if (memberDocUnsub) { memberDocUnsub(); memberDocUnsub=null; }
+  if (weekRankUnsub) { weekRankUnsub(); weekRankUnsub=null; }
   await signOut(auth);
 };
 
@@ -645,7 +646,7 @@ async function loadHomeData() {
 
     // 載入即將過期的點數批次
     await loadExpiryInfo();
-    loadMonthRank(); // 排行榜（不 await，背景載入）
+    subscribeWeekRank(); // 即時週排行榜（背景訂閱）
 
     // 新會員歡迎通知
     const welcomeEl = document.getElementById('welcome-bonus-card');
@@ -686,16 +687,21 @@ async function loadHomeData() {
       if (desc === '好友推薦獎勵') return 'Referral reward';
       // 點數到期
       if (desc === '點數到期') return 'Points expired';
+      // 每週排行頒獎：本週積點第 N 名加贈 X 點
+      const rankMatch = desc.match(/本週積點第 (\d+) 名加贈 (\d+) 點/);
+      if (rankMatch) return `Top ${rankMatch[1]} this week — bonus ${rankMatch[2]} pts`;
       return desc;
     }
     docs.slice(0,15).forEach(tx=>{
       const isEarn=tx.type==='earn', isDeduct=tx.type==='deduct', isWelcome=tx.type==='welcome';
       const isReferral=tx.type==='referral_signup'||tx.type==='referral_reward';
       const isExpire=tx.type==='expire';
-      const isPos=isEarn||isWelcome||isReferral;
+      const isRankBonus=tx.type==='rank_bonus';
+      const isPos=isEarn||isWelcome||isReferral||isRankBonus;
       const dateStr=tx.createdAt?tx.createdAt.toDate().toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'—';
       const item=document.createElement('div'); item.className='history-item';
-      item.innerHTML=`<div class="h-icon ${isPos?'earn':'deduct'}">${isWelcome||isReferral?'🎁':isEarn?'+':isExpire?'⏰':'💰'}</div>
+      const icon = isRankBonus?'🏆':(isWelcome||isReferral?'🎁':isEarn?'+':isExpire?'⏰':'💰');
+      item.innerHTML=`<div class="h-icon ${isPos?'earn':'deduct'}">${icon}</div>
         <div class="h-info"><div class="h-desc">${escHtml(translateDesc(tx.desc,tx.type)||t('紀錄','Record'))}</div>
         <div class="h-date">${dateStr}${tx.amount?' · NT$'+tx.amount.toLocaleString():''}</div></div>
         <div class="h-pts ${isPos?'earn':'deduct'}">${isPos?'+':'-'}${tx.points}</div>`;
@@ -705,56 +711,71 @@ async function loadHomeData() {
 }
 
 
-// ── 排行榜：本月集點排名 ──
-async function loadMonthRank() {
-  try {
-    if (!currentUser) return;
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+// ── 即時週排行榜：上週五 22:00 ~ 本週五 22:00 ──
+// 用 onSnapshot 訂閱 earn 交易，任何人集點後客戶端排名即時更新（不必重整）。
+const TAIPEI_OFFSET_HOURS_CLIENT = 8;
+// 取得「最近 ≤ now 的週五 22:00 (台北)」對應的 Date
+function getMostRecentFridayCutoff(now = new Date()) {
+  const nowMs = now.getTime();
+  const t = new Date(nowMs + TAIPEI_OFFSET_HOURS_CLIENT * 3600 * 1000);
+  const dow = t.getUTCDay(); // 0=Sun, ..., 5=Fri, 6=Sat
+  const todayFri22Ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 22, 0, 0)
+                     - TAIPEI_OFFSET_HOURS_CLIENT * 3600 * 1000;
+  const daysToFri = (5 - dow + 7) % 7;
+  let candidate = todayFri22Ms + daysToFri * 86400000;
+  while (candidate > nowMs) candidate -= 7 * 86400000;
+  return new Date(candidate);
+}
 
-    // 讀全體 earn 交易（Firestore rules 允許任何登入者讀 type==='earn'），
-    // 於前端篩出本月並即時計算排名，不依賴後端是否寫入 monthlyRank。
-    const snap = await getDocs(query(
-      collection(db, 'transactions'),
-      where('type', '==', 'earn')
-    ));
+// 依目前 snapshot 內所有 earn 交易，重算本週排名並更新 hero UI
+function recomputeWeekRank(snap) {
+  if (!currentUser) return;
+  const weekStart = getMostRecentFridayCutoff();
+  const weekPts = {};
+  let myTxCount = 0;
+  snap.forEach(d => {
+    const tx = d.data();
+    const created = tx.createdAt?.toDate?.();
+    if (!tx.uid || !created || created < weekStart) return;
+    weekPts[tx.uid] = Math.round(((weekPts[tx.uid] || 0) + (tx.points || 0)) * 10) / 10;
+    if (tx.uid === currentUser.uid) myTxCount++;
+  });
 
-    // 加總每位會員本月點數（與後端 updateMonthlyRanks 相同邏輯）
-    const monthPts = {};
-    let myTxCount = 0;
-    snap.forEach(d => {
-      const tx = d.data();
-      const created = tx.createdAt?.toDate?.();
-      if (!tx.uid || !created || created < monthStart) return;
-      monthPts[tx.uid] = Math.round(((monthPts[tx.uid] || 0) + (tx.points || 0)) * 10) / 10;
-      if (tx.uid === currentUser.uid) myTxCount++;
-    });
+  const sorted = Object.entries(weekPts).sort((a, b) => b[1] - a[1]);
+  const total  = sorted.length;
+  let myRank = null, rank = 1;
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i][1] < sorted[i - 1][1]) rank = i + 1;
+    if (sorted[i][0] === currentUser.uid) { myRank = rank; break; }
+  }
+  const myPts = weekPts[currentUser.uid] || 0;
 
-    // 依點數高到低排序，計算名次（同分同名）
-    const sorted = Object.entries(monthPts).sort((a, b) => b[1] - a[1]);
-    const total  = sorted.length;
-    let myRank = null, rank = 1;
-    for (let i = 0; i < sorted.length; i++) {
-      if (i > 0 && sorted[i][1] < sorted[i - 1][1]) rank = i + 1;
-      if (sorted[i][0] === currentUser.uid) { myRank = rank; break; }
+  const rankEl  = document.getElementById('hero-rank');
+  const countEl = document.getElementById('hero-month-count'); // 沿用既有 id
+
+  if (rankEl) {
+    if (myRank != null && total > 0) {
+      rankEl.innerHTML = `#${myRank}<span style="font-size:12px;opacity:.7"> / ${total}</span>`;
+    } else if (myPts > 0) {
+      rankEl.textContent = myPts + ' pts';
+    } else {
+      rankEl.textContent = '—';
     }
-    const myPts = monthPts[currentUser.uid] || 0;
+  }
+  if (countEl) countEl.textContent = myTxCount;
+}
 
-    const rankEl  = document.getElementById('hero-rank');
-    const countEl = document.getElementById('hero-month-count');
-
-    if (rankEl) {
-      if (myRank != null && total > 0) {
-        // 顯示名次，例如「#3 / 28」
-        rankEl.innerHTML = `#${myRank}<span style="font-size:12px;opacity:.7"> / ${total}</span>`;
-      } else if (myPts > 0) {
-        rankEl.textContent = myPts + ' pts';
-      } else {
-        rankEl.textContent = '—';
-      }
-    }
-    if (countEl) countEl.textContent = myTxCount;
-  } catch(e) { console.warn('loadMonthRank failed:', e.code || e.message); }
+let weekRankUnsub = null;
+function subscribeWeekRank() {
+  if (!currentUser) return;
+  if (weekRankUnsub) { weekRankUnsub(); weekRankUnsub = null; }
+  // 訂閱所有 type='earn' 交易；onSnapshot 首發包含目前所有資料，之後增量更新
+  // Firestore rules 允許任何登入者讀 type==='earn'
+  weekRankUnsub = onSnapshot(
+    query(collection(db, 'transactions'), where('type', '==', 'earn')),
+    (snap) => { try { recomputeWeekRank(snap); } catch(e) { console.warn('weekRank recompute:', e.message); } },
+    (err) => console.warn('weekRank listener:', err.code || err.message)
+  );
 }
 
 async function loadExpiryInfo() {
