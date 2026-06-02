@@ -1148,7 +1148,10 @@ exports.scheduledWeeklyRankPrize = onSchedule(
     const top5 = sorted.slice(0, 5);
     if (!top5.length) { console.log("[weeklyRankPrize] 上週無 earn，跳過頒獎"); return; }
 
-    const PRIZES = [5, 4, 3, 2, 1]; // 第 1~5 名
+    const rulesSnap = await db.collection("config").doc("point_rules").get();
+    const PRIZES = (rulesSnap.exists && Array.isArray(rulesSnap.data()?.rankPrizes))
+      ? rulesSnap.data().rankPrizes
+      : [5, 4, 3, 2, 1]; // 預設值
     const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 90 * 86400000); // 90 天有效
     let awarded = 0;
     for (let i = 0; i < top5.length; i++) {

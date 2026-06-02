@@ -444,6 +444,19 @@ input:focus,textarea:focus{border-color:var(--pink)}
   <div class="tab-page" id="tab-settings-page">
     <div style="margin-top:12px">
 
+      <!-- 設定密碼鎖：解鎖後才顯示設定內容 -->
+      <div id="settings-lock" class="card" style="text-align:center">
+        <div style="font-size:32px;margin-bottom:6px">🔒</div>
+        <div class="card-title" style="justify-content:center"><span data-zh="設定（已鎖定）" data-en="Settings (Locked)">設定（已鎖定）</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px"><span data-zh="請輸入密碼以存取所有設定" data-en="Enter password to access settings">請輸入密碼以存取所有設定</span></p>
+        <input type="password" id="settings-pw" autocomplete="off" placeholder="輸入密碼 / Password" style="width:100%;padding:11px 13px;border:1.5px solid #e0a0b0;border-radius:10px;font-size:16px;margin-bottom:8px;box-sizing:border-box" onkeydown="if(event.key==='Enter')unlockSettings()">
+        <button onclick="unlockSettings()" class="btn btn-primary" style="width:100%">🔓 <span data-zh="解鎖設定" data-en="Unlock Settings">解鎖設定</span></button>
+        <div id="settings-lock-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
+      </div>
+
+      <!-- 設定內容（解鎖後顯示） -->
+      <div id="settings-content" style="display:none">
+
       <!-- 集點規則設定 -->
       <div class="card">
         <div class="card-title"><span data-zh="💰 集點規則設定" data-en="💰 Point Settings">💰 集點規則設定</span></div>
@@ -562,6 +575,43 @@ input:focus,textarea:focus{border-color:var(--pink)}
         </div>
       </div>
 
+      <!-- 週排行獎勵設定 -->
+      <div class="card">
+        <div class="card-title"><span data-zh="🏆 週排行獎勵設定" data-en="🏆 Weekly Rank Prizes">🏆 週排行獎勵設定</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.7"><span data-zh="設定每週五22:00結算時，積點前五名各獲得的加贈點數（系統自動派送）。" data-en="Set bonus points for top 5 at Friday 22:00 weekly reset (auto-awarded).">設定每週五22:00結算時，積點前五名各獲得的加贈點數（系統自動派送）。</span></p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">🥇 <span data-zh="第 1 名" data-en="1st">第 1 名</span></span>
+            <input type="number" id="rank-prize-1" min="0" step="1" style="width:80px" value="5">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">🥈 <span data-zh="第 2 名" data-en="2nd">第 2 名</span></span>
+            <input type="number" id="rank-prize-2" min="0" step="1" style="width:80px" value="4">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">🥉 <span data-zh="第 3 名" data-en="3rd">第 3 名</span></span>
+            <input type="number" id="rank-prize-3" min="0" step="1" style="width:80px" value="3">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">4️⃣ <span data-zh="第 4 名" data-en="4th">第 4 名</span></span>
+            <input type="number" id="rank-prize-4" min="0" step="1" style="width:80px" value="2">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">5️⃣ <span data-zh="第 5 名" data-en="5th">第 5 名</span></span>
+            <input type="number" id="rank-prize-5" min="0" step="1" style="width:80px" value="1">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveRankPrizes()" id="btn-save-rank-prizes">
+          <span data-zh="💾 儲存排行獎勵" data-en="💾 Save Rank Prizes">💾 儲存排行獎勵</span>
+        </button>
+        <div id="rank-prizes-save-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
+      </div>
+
       <!-- 開發工具 -->
       <div class="card" style="border:1.5px dashed #e0a0b0">
         <div class="card-title" style="color:#c0392b">⚠️ <span data-zh="刪除資料（不可回復）" data-en="Delete Data (Irreversible)">刪除資料（不可回復）</span></div>
@@ -594,6 +644,8 @@ input:focus,textarea:focus{border-color:var(--pink)}
         </div>
         <div id="clear-data-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
       </div>
+
+      </div><!-- /settings-content -->
     </div>
   </div>
 
