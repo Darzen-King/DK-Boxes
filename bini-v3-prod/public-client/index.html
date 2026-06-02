@@ -188,9 +188,9 @@
         </button>
       </div>
     </div>
-    <!-- Banner 圖片 -->
+    <!-- Banner 圖片：副檔名 .jpg 與實際 JPEG 格式一致；不再用 onerror 永久隱藏，避免一次失敗整個 PWA 都看不到 -->
     <div style="width:100%;font-size:0;line-height:0;margin:0;padding:0">
-      <img src="/icons/banner.png" alt="BINI Blooms" style="width:100%;height:auto;display:block;object-fit:cover;margin:0;padding:0" onerror="this.style.display='none'">
+      <img src="/icons/banner.jpg?v=2" alt="BINI Blooms" decoding="async" loading="eager" style="width:100%;height:auto;display:block;object-fit:cover;margin:0;padding:0">
     </div>
   </header>
 
