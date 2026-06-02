@@ -348,7 +348,8 @@ window.handleChangePw=async function(){
 
 // ── Tab 切換 ──
 window.switchTab=function(tab){
-  // 切換分頁時自動把刪除工具重新上鎖（即使停留在設定頁未操作也回到密碼狀態），避免誤按
+  // 切換分頁時自動把設定和刪除工具重新上鎖，避免誤按
+  lockSettings();
   lockClearData();
   const _nav=document.getElementById('admin-bnav'); if(_nav) _nav.classList.add('visible');
   document.querySelectorAll('.tab-btn,.admin-bnav-btn').forEach(b=>b.classList.remove('active'));
@@ -374,6 +375,42 @@ function lockClearData(){
 }
 // 暴露到 window：admin-shop.js 會覆寫 window.switchTab，那個版本也要能呼叫到此函式
 window.lockClearData = lockClearData;
+
+// ── 設定密碼鎖 ─────────────────────────────────────────────────────────
+// 相同密碼；切換分頁或 15 秒閒置後自動回鎖
+let _settingsIdleTimer = null;
+function armSettingsTimer() {
+  if (_settingsIdleTimer) clearTimeout(_settingsIdleTimer);
+  _settingsIdleTimer = setTimeout(() => { lockSettings(); }, 15000);
+}
+
+function lockSettings() {
+  if (_settingsIdleTimer) { clearTimeout(_settingsIdleTimer); _settingsIdleTimer = null; }
+  const lock    = document.getElementById('settings-lock');
+  const content = document.getElementById('settings-content');
+  const pw      = document.getElementById('settings-pw');
+  const msg     = document.getElementById('settings-lock-msg');
+  if (lock)    lock.style.display = '';
+  if (content) content.style.display = 'none';
+  if (pw)      pw.value = '';
+  if (msg)     msg.textContent = '';
+}
+
+window.lockSettings = lockSettings;
+
+window.unlockSettings = function() {
+  const input = document.getElementById('settings-pw');
+  const msg   = document.getElementById('settings-lock-msg');
+  if ((input?.value || '') !== CLEAR_DATA_PASSWORD) {
+    if (msg) { msg.textContent = t('密碼錯誤','Wrong password'); msg.style.color = '#c0392b'; }
+    return;
+  }
+  document.getElementById('settings-lock').style.display    = 'none';
+  document.getElementById('settings-content').style.display = '';
+  if (input) input.value = '';
+  if (msg)   msg.textContent = '';
+  armSettingsTimer();
+};
 
 // ── PWA ──
 function isIOSDevice(){
@@ -1077,6 +1114,7 @@ window.savePointSettings = async function() {
   const btn = document.getElementById('btn-save-point-settings');
   const msg = document.getElementById('settings-save-msg');
   btn.disabled = true;
+  armSettingsTimer();
   try {
     const baseUnit   = Number(document.getElementById('settings-base-unit')?.value)   || 200;
     const basePoints = Number(document.getElementById('settings-base-points')?.value) || 1;
@@ -1087,7 +1125,6 @@ window.savePointSettings = async function() {
       vvvip:  Number(document.getElementById('rate-vvvip')?.value)  || 2.0,
     };
     await setDoc(doc(db,'config','point_rules'), { baseUnit, basePoints, rates, updatedAt: serverTimestamp() }, { merge: true });
-    // 儲存後立即生效，下一筆 confirmAmount 就會用新值
     BASE_UNIT   = baseUnit;
     BASE_POINTS = basePoints;
     TIER_RATES  = rates;
@@ -1117,9 +1154,30 @@ async function loadPointSettings() {
         const el = document.getElementById(`rate-${k}`); if(el && d.rates[k] != null) el.value = d.rates[k];
       });
     }
+    if (Array.isArray(d.rankPrizes)) {
+      d.rankPrizes.forEach((v, i) => {
+        const el = document.getElementById(`rank-prize-${i+1}`); if(el) el.value = v;
+      });
+    }
     updateSettingsPreview();
   } catch(e) { console.warn('loadPointSettings:', e.message); }
 }
+
+// ── 設定頁：週排行獎勵 ─────────────────────────
+window.saveRankPrizes = async function() {
+  const btn = document.getElementById('btn-save-rank-prizes');
+  const msg = document.getElementById('rank-prizes-save-msg');
+  btn.disabled = true;
+  armSettingsTimer();
+  try {
+    const rankPrizes = [1,2,3,4,5].map(i => Number(document.getElementById(`rank-prize-${i}`)?.value) || 0);
+    await setDoc(doc(db,'config','point_rules'), { rankPrizes, updatedAt: serverTimestamp() }, { merge: true });
+    msg.textContent = '✅ 已儲存'; msg.style.color = '#2d8a4e';
+    setTimeout(() => { msg.textContent = ''; }, 2500);
+  } catch(e) {
+    msg.textContent = `❌ 儲存失敗：${e.message}`; msg.style.color = '#c0392b';
+  } finally { btn.disabled = false; }
+};
 
 // ── 設定頁：購物規則 ─────────────────────────
 async function loadShopRules() {
@@ -1140,6 +1198,7 @@ window.saveShopRules = async function() {
   const btn = document.getElementById('btn-save-shop-rules');
   const msg = document.getElementById('shop-rules-save-msg');
   btn.disabled = true;
+  armSettingsTimer();
   try {
     const pointMinOrder         = Number(document.getElementById('settings-point-min-order')?.value) || 0;
     const freeShippingThreshold = Number(document.getElementById('settings-free-shipping')?.value)  || 0;
