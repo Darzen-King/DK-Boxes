@@ -1,7 +1,7 @@
-// BINI Blooms Service Worker v2.1.15-20260517
+// BINI Blooms Service Worker v2.1.16-20260602
 // 此 SW 僅負責快取，推播完全由 firebase-messaging-sw.js 處理
 
-const CACHE = 'bini-v2.1.15-20260517';
+const CACHE = 'bini-v2.1.16-20260602';
 
 self.addEventListener('install', () => self.skipWaiting());
 
