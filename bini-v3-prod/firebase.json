@@ -39,26 +39,6 @@
           "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
         }
       ]
-    },
-    {
-      "target": "pos",
-      "public": "BINI-POS",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }],
-      "headers": [
-        {
-          "source": "**/*.@(js|css|html)",
-          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
-        },
-        {
-          "source": "/@(sw.js|firebase-messaging-sw.js)",
-          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
-        },
-        {
-          "source": "**",
-          "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
-        }
-      ]
     }
   ],
   "firestore": {

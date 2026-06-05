@@ -1,0 +1,24 @@
+{
+  "projects": {
+    "default": "bini-blooms-dev",
+    "dev": "bini-blooms-dev",
+    "prod": "bini-blooms"
+  },
+  "targets": {
+    "bini-blooms-dev": {
+      "hosting": {
+        "pos": [
+          "bini-blooms-dev-pos"
+        ]
+      }
+    },
+    "bini-blooms": {
+      "hosting": {
+        "pos": [
+          "bini-blooms-pos"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

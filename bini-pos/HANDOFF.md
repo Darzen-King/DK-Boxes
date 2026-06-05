@@ -7,8 +7,14 @@
 
 ## 0. 一句話現況
 
-BINI POS 已完成**第 0 階段「地基 + 登入系統」**並通過驗證，程式碼在 `bini-v3-prod/BINI-POS/`。
+BINI POS 已完成**第 0 階段「地基 + 登入系統」**並通過驗證。
 下一步依總整合藍圖第 8 節往「地基 1/2/3 的 Cloud Functions」與「D 庫存模組」推進。
+
+> **結構變更（2026-06-05）**：本專案已從 `DK-Boxes/bini-v3-prod/BINI-POS/` **抽出為獨立 standalone 專案 `bini-pos/`**
+> （應用程式在 `bini-pos/public/`，含自己的 `firebase.json`/`.firebaserc`/`.gitignore`）。
+> 與手機版 `bini-membership` 各自獨立、共用同一 Firebase 後端。
+> ⚠️ `firebase.json` **只含 hosting、不含 firestore**，避免覆蓋共用的 Firestore 規則（見 README §6）。
+> 以下章節提到的歷史路徑（`bini-v3-prod/BINI-POS/...`）為開發當時所在；現行檔案路徑請對應 `bini-pos/public/...`。
 
 ---
 
@@ -54,12 +60,12 @@ repo 內的 `bini-v3-prod` 原本比附檔舊，已更新為最新版（附檔 v
 | 檔案 | 職責 |
 |------|------|
 | `index.html` | 三段式 SPA：登入 → (首次強制改密碼) → 主畫面 |
-| `js/firebase-config.js` | **bini-blooms-dev 佔位設定（待填）**；偵測佔位值切換離線/線上模式 |
-| `js/i18n.js` | 雙語系（繁中/English），登入畫面與全 App 可切換、記憶於 localStorage |
-| `js/permissions.js` | 6 項權限框架 + 模組進入規則 `MODULE_ACCESS` |
-| `js/store.js` | 資料存取層：Firestore（`pos_users`/`pos_roles`）↔ localStorage 自動切換 |
-| `js/auth.js` | 登入/登出/改密碼/帳號管理；SHA-256+salt 雜湊；種子 admin/admin |
-| `js/app.js` | UI 流程編排（登入、改密碼、模組導覽、帳號管理頁） |
+| `public/js/firebase-config.js` | **bini-blooms-dev 佔位設定（待填）**；偵測佔位值切換離線/線上模式 |
+| `public/js/i18n.js` | 雙語系（繁中/English），登入畫面與全 App 可切換、記憶於 localStorage |
+| `public/js/permissions.js` | 6 項權限框架 + 模組進入規則 `MODULE_ACCESS` |
+| `public/js/store.js` | 資料存取層：Firestore（`pos_users`/`pos_roles`）↔ localStorage 自動切換 |
+| `public/js/auth.js` | 登入/登出/改密碼/帳號管理；SHA-256+salt 雜湊；種子 admin/admin |
+| `public/js/app.js` | UI 流程編排（登入、改密碼、模組導覽、帳號管理頁） |
 | `css/pos.css` | 樣式（品牌粉紅 #e6447a） |
 | `manifest.json` / `sw.js` | PWA |
 
@@ -79,7 +85,7 @@ repo 內的 `bini-v3-prod` 原本比附檔舊，已更新為最新版（附檔 v
 
 ## 4. 待辦：填入 bini-blooms-dev 設定
 
-`BINI-POS/js/firebase-config.js` 目前是佔位值（`REPLACE_WITH_*`）。
+`public/js/firebase-config.js` 目前是佔位值（`REPLACE_WITH_*`）。
 取得 `bini-blooms-dev` 的 Web App 設定後替換六欄，POS 會自動從 localStorage 切到 Firestore。
 dev 專案需啟用：**Authentication → 匿名登入**、**Firestore**，並對 `pos_users`/`pos_roles` 設測試規則（見 `README.md` §5）。
 

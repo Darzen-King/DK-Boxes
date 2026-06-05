@@ -1,30 +1,40 @@
-# BINI POS — 門市銷售系統
+# bini-pos — BINI Blooms 門市銷售系統
 
-BINI Blooms 的網頁版 POS，搭配既有的手機會員 App（`public-client`）與後台（`public-admin`），
-共用同一個 Firebase 後端。本目錄為 **POS 前端**（純原生 JS PWA，無框架）。
+BINI Blooms 的網頁版 POS（純原生 JS PWA，無框架）。本專案為**獨立的 standalone 專案**，
+與手機會員 App（`bini-membership`）各自獨立、但**共用同一個 Firebase 後端**
+（測試期 `bini-blooms-dev`，正式 `bini-blooms`）。
 
 > 本階段交付：**地基 ＋ 登入系統**
 > （雙語登入、6 項權限框架、`admin/admin` 預設帳號＋首次強制改密碼、帳號權限管理、模組殼）
 > A~H 八大模組依總整合藍圖「第 8 節實作順序」於後續版本逐步補上。
+>
+> 規劃文件（藍圖／一致性報告／手機端對接規格）目前位於 `bini-membership`（原 DK-Boxes）的
+> `bini-v3-prod/` 內：`BINIPOS_____.md`、`BINIPOS__________.md`、`POS_INTEGRATION.md`。
 
 ---
 
 ## 1. 目錄結構
 
 ```
-BINI-POS/
-├── index.html              登入 / 改密碼 / 主畫面 三段式 SPA
-├── manifest.json           PWA manifest
-├── sw.js                   Service Worker（網路優先快取殼）
-├── css/pos.css             樣式（品牌粉紅 #e6447a）
-├── icons/                  PWA 圖示
-└── js/
-    ├── firebase-config.js  ⚠️ bini-blooms-dev 設定（目前為佔位，需填入）
-    ├── i18n.js             雙語系（繁中 / English）
-    ├── permissions.js      6 項權限框架 + 模組進入規則
-    ├── store.js            資料存取層（Firestore ↔ localStorage 自動切換）
-    ├── auth.js             登入 / 改密碼 / 帳號管理（SHA-256 + salt）
-    └── app.js              UI 流程編排
+bini-pos/
+├── .firebaserc             Firebase 專案別名（dev=bini-blooms-dev / prod=bini-blooms）
+├── firebase.json           Hosting 設定（★只含 hosting，不含 firestore，見 §6 說明）
+├── .gitignore
+├── README.md
+├── HANDOFF.md              接手交接說明
+└── public/                 ← Firebase Hosting 對外目錄
+    ├── index.html          登入 / 改密碼 / 主畫面 三段式 SPA
+    ├── manifest.json       PWA manifest
+    ├── sw.js               Service Worker（網路優先快取殼）
+    ├── css/pos.css         樣式（品牌粉紅 #e6447a）
+    ├── icons/              PWA 圖示
+    └── js/
+        ├── firebase-config.js  ⚠️ bini-blooms-dev 設定（目前為佔位，需填入）
+        ├── i18n.js             雙語系（繁中 / English）
+        ├── permissions.js      6 項權限框架 + 模組進入規則
+        ├── store.js            資料存取層（Firestore ↔ localStorage 自動切換）
+        ├── auth.js             登入 / 改密碼 / 帳號管理（SHA-256 + salt）
+        └── app.js              UI 流程編排
 ```
 
 ---
@@ -108,8 +118,8 @@ pos_roles/{roleId}            （預留；本階段以 customPermissions 為主�
 ### 5.1 填入 dev Web 設定
 
 1. Firebase Console → 專案 `bini-blooms-dev` → 專案設定 ⚙️ → 一般 → 你的應用程式 → Web App → SDK 設定與配置 → **Config**
-2. 把六個欄位填進 `BINI-POS/js/firebase-config.js` 的 `firebaseConfig`（取代 `REPLACE_WITH_*`）
-3. （若也要在 dev 跑手機版）同樣替換 `public-client` / `public-admin` 的 `firebase-config.js`
+2. 把六個欄位填進 `public/js/firebase-config.js` 的 `firebaseConfig`（取代 `REPLACE_WITH_*`）
+3. （`bini-membership` 手機版若也要在 dev 測試，於該專案各自替換其 `firebase-config.js`）
 
 ### 5.2 啟用所需服務（dev 專案）
 
@@ -139,25 +149,30 @@ match /pos_roles/{roleId} {
 ### 本機預覽
 ```bash
 # 任一靜態伺服器即可（需 http，因使用 ES module / SW）
-cd bini-v3-prod/BINI-POS
-python3 -m http.server 5500
+cd bini-pos/public
+python -m http.server 5500       # Windows 用 python；macOS/Linux 用 python3
 # 開 http://localhost:5500
 ```
 首次開啟即可用 `admin` / `admin` 登入（離線模式也可）。
 
 ### 部署到 dev
 ```bash
-cd bini-v3-prod
-firebase use dev                      # 切到 bini-blooms-dev
-firebase deploy --only hosting:pos    # 僅部署 POS 站台
+cd bini-pos
+firebase use dev                      # 切到 bini-blooms-dev（.firebaserc 已設別名）
+firebase deploy --only hosting        # 部署 POS 站台（pos target）
 ```
-> 需先在 dev 專案建立 Hosting site `bini-blooms-dev-pos`（對應 `.firebaserc` 的 target）。
+> 需先在 dev 專案建立 Hosting site `bini-blooms-dev-pos`（對應 `.firebaserc` 的 target）：
+> `firebase hosting:sites:create bini-blooms-dev-pos`
 
-### ⚠️ 不影響正式環境
-- `pos` hosting target **只**對應到 `bini-blooms-dev`（見 `.firebaserc`），prod 沒有 pos 站台。
-- 部署正式環境請維持**明確指定**：
-  `firebase use prod && firebase deploy --only hosting:client,hosting:admin,functions`
-  （避免使用會掃到 pos target 的裸 `firebase deploy`）
+### ⚠️ 重要：本專案只部署 Hosting，不要部署 Firestore 規則
+`firebase.json` **刻意不含 `firestore` 區塊**。原因：POS 與 `bini-membership` 共用同一個
+Firebase 專案，而 Firestore 規則是**整個專案唯一一份**——若兩個 repo 各自帶 `firestore.rules`
+互相部署會**覆蓋**對方的規則。
+
+因此：
+- **POS 站台部署**：`bini-pos` 只負責 `firebase deploy --only hosting`。
+- **`pos_users` / `pos_roles` 的 Firestore 規則**：請加進**擁有該專案規則的那個 repo**
+  （即 `bini-membership` 的 `firestore.rules`），或於封閉測試期直接用 Console 測試模式 / §5.3 規則。
 
 ---
 
@@ -172,4 +187,4 @@ firebase deploy --only hosting:pos    # 僅部署 POS 站台
 - [ ] E 今日銷售、F 分析報表
 - [ ] G 客戶端配合、H 後台相容
 
-詳見專案根目錄三份規劃文件與 `POS_INTEGRATION.md`。
+詳見 `bini-membership`（原 DK-Boxes）`bini-v3-prod/` 內三份規劃文件與 `POS_INTEGRATION.md`。
