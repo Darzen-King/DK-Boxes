@@ -2,8 +2,13 @@
 
 > 本文件目的：為新製作的 POS 系統提供完整、精確的技術規格，避免整合時產生 bug。
 > 文件涵蓋會員、集點、兌換、訂單、推播、認證等所有可能與 POS 對接的子系統。
-> 文件版本：v1.0（對應 bini-blooms-functions v3.0.5 / client v3.0.44-prod）
+> 文件版本：v1.1（對應 bini-blooms-functions v3.0.6 / client v3.0.44-prod）
 > 最後更新：2026-06-02
+>
+> **v1.1 變更摘要**：
+> - ✅ 修復 §12.1：`genOrderId()` 已實作（`functions/index.js:625-633`）
+> - ✅ 修復 §12.5：`checkAdmin()` 改用 `disabled !== true` 與 Firestore rules 一致
+> - ✅ 新增 §5.6：`confirmPointsByPhone` callable（POS 結帳直接集點）
 
 ---
 
@@ -447,6 +452,65 @@ POS（Node.js 後端）建議改用 **Admin SDK 直接寫 Firestore**（見 §11
 #### `adminTriggerBirthdayGreeting()`
 店家端手動觸發今日生日推播（補發用）
 
+### 5.6 POS 專用：以手機號集點 ⭐ v1.1 新增
+
+#### `confirmPointsByPhone(phone, amount)`
+
+**用途**：POS 結帳完成後直接以會員手機號 + 金額完成集點，**不需走 QR 流程**。
+
+**權限**：需 admin 帳號（與 `checkAdmin()` 一致）
+
+| 參數 | 型別 | 必填 | 說明 |
+|------|------|------|------|
+| `phone` | string | ✅ | 會員手機號（09XXXXXXXX 格式） |
+| `amount` | number > 0 | ✅ | 消費金額（NTD） |
+
+**回傳**：
+```js
+{
+  success: true,
+  points: 6,              // 實際發出點數（含生日加倍）
+  basePoints: 3,          // 加倍前
+  birthdayBonus: true,    // 是否生日加倍
+  memberUid: "abc123",
+  memberName: "黃俊哲",
+  tier: "vip",
+  totalSpent: 12500,      // 集點後累計消費
+  newTotalPts: 73.5,      // 集點後總點數
+}
+```
+
+**錯誤碼**：
+- `unauthenticated` — 未登入
+- `permission-denied` — 非 admin
+- `invalid-argument` — 缺手機號或金額無效
+- `not-found` — 查無此手機號會員
+
+**副作用**：
+1. 動態讀 `config/point_rules` 計算 `BASE_UNIT` / `BASE_POINTS` / `TIER_RATES`
+2. 依新累計消費自動調升等級
+3. 生日當天自動 ×2
+4. 寫 `transactions` (type=earn, source='pos') + `point_batches` (含 `remaining`)
+5. 更新 `members.points` / `totalSpent` / `visitCount` / `tier`
+6. 推播給會員（含生日訊息差異）
+7. `onEarnTransaction` 觸發：更新月排行 + 處理推薦人回饋
+
+**金額未達門檻時**：回傳 `points: 0` 與 `note: "金額未達基礎門檻，未發點"`，**不寫入任何 collection**。
+
+**POS 端範例（Node.js / Admin SDK）**：
+```js
+// 方法 A：以 admin 帳號登入後 callable
+const { getFunctions, httpsCallable } = require('firebase/functions');
+const fn = httpsCallable(getFunctions(app, 'us-central1'), 'confirmPointsByPhone');
+const r = await fn({ phone: '0912345678', amount: 1500 });
+console.log(`給予 ${r.data.points} 點，餘額 ${r.data.newTotalPts}`);
+```
+
+```js
+// 方法 B：POS 後端用 Service Account 走 callable
+// （需用 Identity Token，較複雜，建議用方法 A 或直接 Admin SDK 寫 Firestore）
+```
+
 ---
 
 ## 6. 排程與觸發器
@@ -621,28 +685,28 @@ POS 系統 (前端)
                  或 batch write products collection
 ```
 
-### 11.2 需要新增的 Cloud Function（建議）
+### 11.2 POS 用 Cloud Function（v1.1 已實作）
 
-POS 整合最缺的是「以手機號直接集點」的 endpoint，目前必須走 QR。建議新增：
+✅ **`confirmPointsByPhone` 已實作**，POS 結帳完成後直接呼叫即可。完整 API 見 §5.6。
 
 ```js
-// functions/index.js
-exports.confirmPointsByPhone = onCall({ region: "us-central1" }, async (request) => {
-  if (!await checkAdmin(request.auth?.uid)) {
-    throw new HttpsError("permission-denied", "需 admin 權限");
-  }
-  const { phone, amount } = request.data;
-  if (!phone || !amount || amount <= 0) {
-    throw new HttpsError("invalid-argument", "參數錯誤");
-  }
-  // 查會員
-  const snap = await db.collection("members").where("phone", "==", phone).limit(1).get();
-  if (snap.empty) throw new HttpsError("not-found", "查無此手機號會員");
-  const memberDoc = snap.docs[0];
-  // 後續邏輯同 admin-app.js 的 confirmAmount，但搬到後端執行
-  // ... (computeTier + birthdayBonus + batch write + sendPush)
+// POS 結帳成功後（前端 JS / 或後端 Node）
+const r = await httpsCallable(functions, 'confirmPointsByPhone')({
+  phone: '0912345678',
+  amount: 1500,
 });
+// r.data = { success, points, basePoints, birthdayBonus,
+//            memberUid, memberName, tier, totalSpent, newTotalPts }
 ```
+
+**所有業務邏輯都封裝在後端**：
+- 動態讀取 `BASE_UNIT` / `BASE_POINTS` / `TIER_RATES`
+- 生日加倍
+- 等級自動調升
+- 月排行 / 推薦回饋（由 `onEarnTransaction` 觸發器自動處理）
+- 推播給會員
+
+POS 端只需要負責呼叫與處理錯誤碼。
 
 ### 11.3 商品/庫存同步
 
@@ -708,20 +772,22 @@ db.collection('orders')
 
 ## 12. 已知問題與雷區
 
-### 12.1 ⚠️ Critical：`genOrderId()` 未定義
+### 12.1 ✅ 已修復（v1.1）：`genOrderId()` 未定義
 
-`functions/index.js:647` 呼叫 `genOrderId()`，但全檔案沒有此函式定義。
-**目前線上下單會 throw ReferenceError → 訂單建立失敗**。
+**原問題**：`functions/index.js:647` 呼叫 `genOrderId()` 但全檔案無定義，線上下單會 throw ReferenceError。
 
-修補建議：
+**修補（已套用，位於 `functions/index.js:625-633`）**：
 ```js
 function genOrderId() {
-  const d = new Date();
-  const ymd = d.toISOString().slice(0,10).replace(/-/g,'');
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `BB${ymd}${rand}`;  // 例：BB20260602AB3C9F
+  const now = new Date(Date.now() + 8 * 3600 * 1000); // 台北時區
+  const ymd = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let rand = "";
+  for (let i = 0; i < 6; i++) rand += crypto.randomInt(chars.length);
+  return `BB${ymd}${rand}`;  // 例：BB20260602K7P3X9
 }
 ```
+格式：`BB` + 台北時區 YYYYMMDD + 6 碼隨機（去除易混淆字元 0/O/1/I）。
 
 ### 12.2 ⚠️ `qr_tokens` 完全公開
 
@@ -747,15 +813,20 @@ const basePoints = rules.basePoints || 1;
 const tierRates = rules.rates || { normal:1.0, vip:1.3, vvip:1.5, vvvip:2.0 };
 ```
 
-### 12.5 ⚠️ Admin 認證欄位不一致
+### 12.5 ✅ 已修復（v1.1）：Admin 認證欄位不一致
 
-- `firestore.rules`：用 `data.disabled != true`
-- `functions/index.js`：用 `data.active === true`
+**原問題**：
+- `firestore.rules` 用 `data.disabled != true`
+- `functions/index.js` 用 `data.active === true`
+- 結果：admin doc 沒設 `active` 時，rules 通過但 functions 拒絕
 
-建立 admin doc 時兩個都要設：
+**修補（已套用）**：`checkAdmin()` 改為 `disabled !== true`，與 rules 完全一致。
+
+建立 admin doc 的建議欄位（仍然推薦填齊）：
 ```js
-{ active: true, disabled: false, email: '...', name: '...' }
+{ disabled: false, email: '...', name: '...', createdAt: serverTimestamp() }
 ```
+（`active` 欄位現在已不再被檢查，可省略；舊資料留著也不會出錯。）
 
 ### 12.6 ⚠️ `pointsPending` 邏輯只在訂單流程
 
