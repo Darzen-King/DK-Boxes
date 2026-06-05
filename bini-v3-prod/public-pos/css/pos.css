@@ -1,0 +1,221 @@
+/* ============================================================================
+   BINI POS — 樣式
+   品牌主色：粉紅 #e6447a（沿用 BINI Blooms 系列）
+   ============================================================================ */
+
+:root {
+  --brand:      #e6447a;
+  --brand-dark: #c5306180;
+  --brand-2:    #ff7eb3;
+  --ink:        #2b2b33;
+  --muted:      #8a8a96;
+  --line:       #e7e7ee;
+  --bg:         #f5f5f9;
+  --card:       #ffffff;
+  --ok:         #2e9e6b;
+  --err:        #d8425a;
+  --radius:     14px;
+  --shadow:     0 6px 24px rgba(40, 20, 40, .08);
+  font-size: 16px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  color: var(--ink); background: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hidden { display: none !important; }
+.muted  { color: var(--muted); }
+.view   { min-height: 100vh; }
+
+/* ── 離線測試模式提示條 ── */
+.offline-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: #fff4d6; color: #8a6d1a; text-align: center;
+  padding: 6px 12px; font-size: .82rem; border-bottom: 1px solid #f0e0a8;
+}
+
+/* ============================ 登入畫面 ============================ */
+.login-view {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+  padding: 24px;
+}
+.login-card {
+  position: relative;
+  width: 100%; max-width: 380px;
+  background: var(--card); border-radius: 20px;
+  box-shadow: 0 18px 48px rgba(120, 30, 70, .28);
+  padding: 36px 28px 28px;
+}
+.lang-toggle {
+  position: absolute; top: 14px; right: 14px;
+  border: 1px solid var(--line); background: #fff; color: var(--brand);
+  border-radius: 999px; padding: 5px 14px; font-size: .82rem; font-weight: 600;
+  cursor: pointer;
+}
+.lang-toggle:hover { background: #fff0f5; }
+
+.login-brand { text-align: center; margin-bottom: 22px; }
+.login-logo {
+  width: 64px; height: 64px; margin: 0 auto 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: #fff; font-weight: 800; letter-spacing: 1px;
+  border-radius: 18px; font-size: 1.05rem;
+}
+.login-title { margin: 0; font-size: 1.5rem; font-weight: 800; }
+.login-subtitle { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+
+.login-form { display: flex; flex-direction: column; gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; font-weight: 600; color: #555; }
+.field input {
+  padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 10px;
+  font-size: 1rem; outline: none; transition: border-color .15s;
+  background: #fafafe;
+}
+.field input:focus { border-color: var(--brand); background: #fff; }
+.field input:disabled { background: #f0f0f4; color: var(--muted); }
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--brand), var(--brand-2));
+  color: #fff; border: none; border-radius: 10px;
+  padding: 13px; font-size: 1rem; font-weight: 700; cursor: pointer;
+  transition: filter .15s, transform .05s;
+}
+.btn-primary:hover { filter: brightness(1.04); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary:disabled { opacity: .6; cursor: default; }
+
+.btn-ghost {
+  background: #fff; color: var(--ink); border: 1.5px solid var(--line);
+  border-radius: 10px; padding: 13px 18px; font-size: 1rem; cursor: pointer;
+}
+.btn-ghost:hover { background: #f4f4f8; }
+
+.form-error {
+  background: #fdecef; color: var(--err); border: 1px solid #f5c2cd;
+  border-radius: 8px; padding: 9px 12px; font-size: .85rem;
+}
+.form-success {
+  background: #e7f7ee; color: var(--ok); border: 1px solid #b9e6cd;
+  border-radius: 8px; padding: 9px 12px; font-size: .85rem;
+}
+.login-hint {
+  margin: 18px 0 0; padding-top: 16px; border-top: 1px dashed var(--line);
+  font-size: .78rem; color: var(--muted); text-align: center; line-height: 1.5;
+}
+
+/* ============================ 改密碼 Modal ============================ */
+.modal-view {
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(40, 20, 40, .35); padding: 24px;
+}
+.modal-card {
+  width: 100%; max-width: 400px; background: var(--card);
+  border-radius: 18px; box-shadow: var(--shadow); padding: 28px;
+}
+.modal-card h2 { margin: 0 0 6px; font-size: 1.3rem; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+
+/* ============================ App 主畫面 ============================ */
+.app-view { display: flex; flex-direction: column; height: 100vh; }
+.app-header {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--card); border-bottom: 1px solid var(--line);
+  padding: 10px 18px; box-shadow: 0 1px 6px rgba(0,0,0,.04);
+}
+.app-logo { font-weight: 800; color: var(--brand); font-size: 1.15rem; letter-spacing: .5px; }
+.app-header-right { display: flex; align-items: center; gap: 8px; }
+.user-badge { display: flex; align-items: center; gap: 8px; font-size: .9rem; margin-right: 6px; }
+.role-chip {
+  background: #fff0f5; color: var(--brand); border: 1px solid #ffd6e6;
+  border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 700;
+}
+.role-chip.super { background: #fdeede; color: #b5760a; border-color: #f2d49a; }
+.icon-btn {
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 12px; font-size: .82rem; cursor: pointer; color: var(--ink);
+}
+.icon-btn:hover { background: #f4f4f8; }
+
+.app-body { flex: 1; display: flex; min-height: 0; }
+.module-nav {
+  width: 132px; flex-shrink: 0; background: var(--card);
+  border-right: 1px solid var(--line); padding: 12px 8px;
+  display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
+}
+.nav-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  border: none; background: transparent; border-radius: 10px;
+  padding: 12px 6px; cursor: pointer; color: #666; font-size: .78rem;
+  transition: background .12s, color .12s;
+}
+.nav-item:hover { background: #f6f6fb; }
+.nav-item.active { background: #fff0f5; color: var(--brand); font-weight: 700; }
+.nav-icon { font-size: 1.4rem; }
+.nav-label { text-align: center; line-height: 1.2; }
+
+.module-content { flex: 1; padding: 24px; overflow-y: auto; }
+
+/* ── 模組佔位（開發中）── */
+.placeholder {
+  height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; gap: 8px;
+}
+.placeholder-icon { font-size: 3.4rem; }
+.placeholder h2 { margin: 4px 0 0; }
+
+/* ============================ 帳號管理 ============================ */
+.module-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px; flex-wrap: wrap;
+}
+.module-head h2 { margin: 0 0 4px; }
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+.data-table th, .data-table td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: .9rem; vertical-align: middle; }
+.data-table th { background: #faf7f9; font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.data-table tr:last-child td { border-bottom: none; }
+
+.perm-chip {
+  display: inline-block; background: #eef4ff; color: #3a63b8; border: 1px solid #d4e0f7;
+  border-radius: 6px; padding: 1px 8px; font-size: .72rem; margin: 1px 2px;
+}
+.status-chip { border-radius: 999px; padding: 2px 10px; font-size: .74rem; font-weight: 700; }
+.status-chip.on { background: #e7f7ee; color: var(--ok); }
+.status-chip.off { background: #f0f0f4; color: var(--muted); }
+.row-actions { white-space: nowrap; }
+.btn-mini {
+  background: #fff; border: 1px solid var(--line); border-radius: 7px;
+  padding: 5px 10px; font-size: .78rem; cursor: pointer; margin: 0 2px; color: var(--ink);
+}
+.btn-mini:hover { background: #f4f4f8; border-color: var(--brand); color: var(--brand); }
+
+/* ── 帳號表單卡 ── */
+.card { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 22px; }
+.form-card { margin-top: 18px; max-width: 640px; }
+.form-card h3 { margin: 0 0 16px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.check-row { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: .92rem; cursor: pointer; }
+.check-row input { width: 18px; height: 18px; accent-color: var(--brand); }
+
+.perm-block { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 8px 0 4px; background: #fafafe; }
+.perm-row { display: grid; grid-template-columns: 24px 140px 1fr; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--line); cursor: pointer; }
+.perm-row:last-child { border-bottom: none; }
+.perm-row input { width: 18px; height: 18px; accent-color: var(--brand); }
+.perm-name { font-weight: 600; font-size: .9rem; }
+.perm-desc { font-size: .78rem; }
+
+/* ============================ 響應式 ============================ */
+@media (max-width: 640px) {
+  .app-header { flex-wrap: wrap; gap: 8px; }
+  .module-nav { width: 84px; }
+  .nav-label { font-size: .68rem; }
+  .module-content { padding: 14px; }
+  .perm-row { grid-template-columns: 24px 1fr; }
+  .perm-desc { grid-column: 2; }
+}

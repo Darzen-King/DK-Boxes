@@ -1,6 +1,8 @@
 {
   "projects": {
-    "default": "bini-blooms"
+    "default": "bini-blooms",
+    "prod": "bini-blooms",
+    "dev": "bini-blooms-dev"
   },
   "targets": {
     "bini-blooms": {
@@ -10,6 +12,19 @@
         ],
         "admin": [
           "bini-blooms-admin"
+        ]
+      }
+    },
+    "bini-blooms-dev": {
+      "hosting": {
+        "client": [
+          "bini-blooms-dev-client"
+        ],
+        "admin": [
+          "bini-blooms-dev-admin"
+        ],
+        "pos": [
+          "bini-blooms-dev-pos"
         ]
       }
     }
