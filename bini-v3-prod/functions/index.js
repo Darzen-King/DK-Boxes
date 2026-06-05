@@ -1,11 +1,11 @@
 /**
  * BINI Blooms — Firebase Cloud Functions
- * Version: 3.0.5  (firebase-functions v2 / Node 22)
+ * Version: 3.0.6  (firebase-functions v2 / Node 22)
  */
 
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule }                    = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated }             = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineString, defineBoolean }   = require("firebase-functions/params");
 const admin  = require("firebase-admin");
 // Node 22 內建 fetch，不需要 node-fetch
@@ -39,20 +39,29 @@ const RULES = {
 };
 
 // ─────────────────────────────────────────────
+// FCM 錯誤碼：代表此 token 已失效（裝置移除 PWA、清快取、token 過期等），
+// 應從資料庫移除，避免之後每次推播都對同一個壞 token 重複失敗。
+const STALE_FCM_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+]);
+
 async function sendPush(uid, title, body, data = {}) {
   try {
     const snap = await db.collection("push_tokens").doc(uid).get();
-    if (!snap.exists) return;
+    if (!snap.exists) return { success: false, sent: 0, failed: 0 };
     const d = snap.data();
 
-    // 收集所有有效 token（支援新版 tokens map 和舊版單一 token）
-    const tokens = [];
+    // 收集 token 並記住來源欄位路徑，以便失效時精準清除該欄位
+    const entries = []; // [{ token, path }]，path 為 doc 內的欄位路徑
     if (d.tokens && typeof d.tokens === "object") {
-      Object.values(d.tokens).forEach(t => { if (t) tokens.push(t); });
+      Object.entries(d.tokens).forEach(([k, t]) => {
+        if (t) entries.push({ token: t, path: `tokens.${k}` });
+      });
     } else if (d.token) {
-      tokens.push(d.token);
+      entries.push({ token: d.token, path: "token" });
     }
-    if (!tokens.length) return;
+    if (!entries.length) return { success: false, sent: 0, failed: 0 };
 
     // ⚠️ 純 data 訊息：不帶 notification 欄位，避免 FCM 自動顯示 + SW 各顯示一次（重複推播）
     // SW 的 onBackgroundMessage 統一負責顯示通知
@@ -70,15 +79,52 @@ async function sendPush(uid, title, body, data = {}) {
       },
     };
 
-    // 多 token 同時推播
-    if (tokens.length === 1) {
-      await admin.messaging().send({ ...msg, token: tokens[0] });
+    const stalePaths = [];
+    let sent = 0, failed = 0;
+
+    if (entries.length === 1) {
+      try {
+        await admin.messaging().send({ ...msg, token: entries[0].token });
+        sent = 1;
+      } catch (sendErr) {
+        failed = 1;
+        if (STALE_FCM_CODES.has(sendErr.code)) {
+          stalePaths.push(entries[0].path);
+        } else {
+          console.warn("Push failed:", sendErr.message);
+        }
+      }
     } else {
-      await admin.messaging().sendEachForMulticast({ ...msg, tokens });
+      const resp = await admin.messaging().sendEachForMulticast({ ...msg, tokens: entries.map(e => e.token) });
+      sent = resp.successCount;
+      failed = resp.failureCount;
+      resp.responses.forEach((r, i) => {
+        if (r.success) return;
+        const code = r.error?.code;
+        if (STALE_FCM_CODES.has(code)) stalePaths.push(entries[i].path);
+        else if (code) console.warn(`[push] uid=${uid} send error: ${code}`);
+      });
     }
-    console.log(`✅ Push sent to ${uid}: ${title}`);
+
+    // 自動清除失效 token
+    if (stalePaths.length) {
+      const updates = {};
+      stalePaths.forEach(p => { updates[p] = admin.firestore.FieldValue.delete(); });
+      try {
+        await db.collection("push_tokens").doc(uid).update(updates);
+        console.log(`[push] 已清除 ${stalePaths.length} 個失效 token (uid=${uid})`);
+      } catch (cleanErr) {
+        console.warn(`[push] 清除失效 token 失敗 uid=${uid}:`, cleanErr.message);
+      }
+    }
+
+    if (sent > 0) {
+      console.log(`✅ Push sent to ${uid}: ${title}`);
+    }
+    return { success: sent > 0, sent, failed };
   } catch (e) {
     console.warn("Push failed:", e.message);
+    return { success: false, sent: 0, failed: 0 };
   }
 }
 
@@ -133,25 +179,29 @@ async function updateMonthlyRanks() {
   console.log(`✅ [updateMonthlyRanks] 完成，共更新 ${uids.length} 位會員`);
 }
 
+// 與 firestore.rules 的判定一致：admin 文件存在且未被明確停用即視為有效
+// 過去用 active === true 過於嚴格，會導致 rules 通過但 functions 拒絕的邊界情況
 async function checkAdmin(uid) {
+  if (!uid) return false;
   const doc = await db.collection("admins").doc(uid).get();
-  return doc.exists && doc.data()?.active === true;
+  return doc.exists && doc.data()?.disabled !== true;
 }
 
 // 推播給所有店家端（讀 admin_tokens 集合）
 async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://bini-blooms-dev-admin.web.app") {
   try {
     const adminSnap = await db.collection("admin_tokens").get();
-    const tokens = [];
+    // 記下每個 token 來自哪位 admin 的哪個裝置鍵，以便失效時精準清除
+    const entries = []; // [{ token, adminUid, deviceKey }]
     adminSnap.forEach(doc => {
       const d = doc.data();
       if (d.devices && typeof d.devices === "object") {
-        Object.values(d.devices).forEach(device => {
-          if (device.token) tokens.push(device.token);
+        Object.entries(d.devices).forEach(([k, device]) => {
+          if (device?.token) entries.push({ token: device.token, adminUid: doc.id, deviceKey: k });
         });
       }
     });
-    if (!tokens.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
+    if (!entries.length) { console.log("sendPushToAdmins: 沒有 admin token"); return; }
 
     const msg = {
       data: {
@@ -164,9 +214,31 @@ async function sendPushToAdmins(title, body, data = {}, adminWebUrl = "https://b
         headers: { "apns-priority": "10" },
         payload: { aps: { sound: "default", "content-available": 1 } },
       },
-      tokens,
+      tokens: entries.map(e => e.token),
     };
     const result = await admin.messaging().sendEachForMulticast(msg);
+
+    // 收集失效 token，依 adminUid 分組清除（一個 admin 可能有多裝置）
+    const staleByAdmin = {}; // { adminUid: [deviceKey, ...] }
+    result.responses.forEach((r, i) => {
+      if (r.success) return;
+      const code = r.error?.code;
+      if (STALE_FCM_CODES.has(code)) {
+        const e = entries[i];
+        (staleByAdmin[e.adminUid] = staleByAdmin[e.adminUid] || []).push(e.deviceKey);
+      }
+    });
+    for (const [adminUid, keys] of Object.entries(staleByAdmin)) {
+      const updates = {};
+      keys.forEach(k => { updates[`devices.${k}`] = admin.firestore.FieldValue.delete(); });
+      try {
+        await db.collection("admin_tokens").doc(adminUid).update(updates);
+        console.log(`[adminPush] 已清除 ${keys.length} 個失效 token (adminUid=${adminUid})`);
+      } catch (cleanErr) {
+        console.warn(`[adminPush] 清除失敗 adminUid=${adminUid}:`, cleanErr.message);
+      }
+    }
+
     console.log(`✅ sendPushToAdmins: ${title}，成功 ${result.successCount}，失敗 ${result.failureCount}`);
   } catch (e) {
     console.warn("sendPushToAdmins failed:", e.message);
@@ -224,8 +296,8 @@ exports.confirmPoints = onCall({ region: "us-central1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }).commit();
 
-  await sendPush(memberUid, "🎉 集點成功！",
-    `您獲得了 ${rawPoints} 點！目前共有 ${newTotal} 點。`);
+  await sendPush(memberUid, "🎉 Points Earned! | 集點成功",
+    `You earned ${rawPoints} point(s)! Balance: ${newTotal}. | 您獲得 ${rawPoints} 點，目前共 ${newTotal} 點。`);
 
   // 更新本月排名
   try {
@@ -235,6 +307,135 @@ exports.confirmPoints = onCall({ region: "us-central1" }, async (request) => {
   }
 
   return { success: true, points: rawPoints, total: newTotal };
+});
+
+// ─────────────────────────────────────────────
+//  POS 系統用：以手機號直接集點
+// ─────────────────────────────────────────────
+// 設計目標：POS 結帳完成後不需走 QR 流程，直接以會員手機號 + 金額完成集點。
+// 業務邏輯與後台 admin-app.js 的 confirmAmount 一致：
+//  - 動態讀 config/point_rules 的 BASE_UNIT / BASE_POINTS / TIER_RATES
+//  - 依新累計消費決定等級
+//  - 生日當天點數自動加倍
+//  - 90 天到期；批次寫入 transactions / point_batches / members
+//  - 推播給會員
+// 權限：需 admin 帳號（與 firestore.rules 的 isAdmin 一致）
+exports.confirmPointsByPhone = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  if (!(await checkAdmin(request.auth.uid))) {
+    throw new HttpsError("permission-denied", "需 admin 權限");
+  }
+
+  const phone = String(request.data?.phone || "").trim();
+  const amount = Number(request.data?.amount);
+  if (!phone) throw new HttpsError("invalid-argument", "缺少手機號");
+  if (!amount || amount <= 0) throw new HttpsError("invalid-argument", "金額需大於 0");
+
+  // 查會員
+  const memberSnap = await db.collection("members").where("phone", "==", phone).limit(1).get();
+  if (memberSnap.empty) throw new HttpsError("not-found", "查無此手機號會員");
+  const memberDoc = memberSnap.docs[0];
+  const memberRef = memberDoc.ref;
+  const member = memberDoc.data();
+
+  // 讀取動態集點規則（與後台設定頁同步）
+  let BASE_UNIT = 200, BASE_POINTS = 1;
+  let TIER_RATES = { normal: 1.0, vip: 1.3, vvip: 1.5, vvvip: 2.0 };
+  try {
+    const rulesSnap = await db.collection("config").doc("point_rules").get();
+    if (rulesSnap.exists) {
+      const r = rulesSnap.data();
+      if (r.baseUnit)   BASE_UNIT   = r.baseUnit;
+      if (r.basePoints) BASE_POINTS = r.basePoints;
+      if (r.rates)      TIER_RATES  = { ...TIER_RATES, ...r.rates };
+    }
+  } catch (e) { console.warn("[confirmPointsByPhone] 讀規則失敗:", e.message); }
+
+  // 依新累計消費決定等級
+  const newTotalSpent = (member.totalSpent || 0) + amount;
+  const tierIdx = RULES.TIER_THRESHOLDS.filter(t => newTotalSpent >= t).length - 1;
+  const newTier = RULES.TIER_NAMES[tierIdx] || "normal";
+  const rate = TIER_RATES[newTier] ?? 1.0;
+
+  // 集點公式：floor(金額 / BASE_UNIT) × BASE_POINTS × 等級倍率
+  const basePts = Math.round(Math.floor(amount / BASE_UNIT) * BASE_POINTS * rate * 10) / 10;
+
+  // 生日加倍判定（台北時區）
+  const isBday = (() => {
+    if (!member.birthday || typeof member.birthday !== "string") return false;
+    const p = member.birthday.split("-");
+    if (p.length < 3) return false;
+    const { m, d } = todayTaipeiYMD();
+    return p[1].padStart(2, "0") === m && p[2].padStart(2, "0") === d;
+  })();
+  const pts = isBday ? basePts * 2 : basePts;
+
+  // 0 點不寫入交易（金額未達 BASE_UNIT 門檻）
+  if (pts <= 0) {
+    return {
+      success: true, points: 0, basePoints: 0, birthdayBonus: false,
+      memberUid: memberDoc.id, memberName: member.name,
+      tier: newTier, totalSpent: newTotalSpent,
+      newTotalPts: member.points || 0,
+      note: "金額未達基礎門檻，未發點",
+    };
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
+
+  const txRef    = db.collection("transactions").doc();
+  const batchRef = db.collection("point_batches").doc();
+  const newTotalPts = (member.points || 0) + pts;
+
+  const desc   = `消費集點 NT${amount}（${newTier}）${isBday ? " 🎂生日加倍" : ""}`;
+  const descEn = `Points earned NT${amount} (${newTier})${isBday ? " 🎂Birthday x2" : ""}`;
+
+  await db.batch()
+    .set(txRef, {
+      uid: memberDoc.id, type: "earn",
+      points: pts, amount, tier: newTier, rate,
+      basePoints: basePts, birthdayBonus: isBday,
+      desc, descEn,
+      source: "pos",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .set(batchRef, {
+      uid: memberDoc.id, points: pts, remaining: pts, consumed: 0,
+      amount, tier: newTier,
+      earnedAt:  admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+      txId: txRef.id,
+    })
+    .update(memberRef, {
+      points:     admin.firestore.FieldValue.increment(pts),
+      totalSpent: admin.firestore.FieldValue.increment(amount),
+      visitCount: admin.firestore.FieldValue.increment(1),
+      tier: newTier,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .commit();
+
+  await sendPush(memberDoc.id,
+    isBday ? "🎂 Birthday Double Points! | 生日加倍集點"
+           : "🎉 Points Earned! | 集點成功",
+    isBday
+      ? `Happy Birthday! NT$${amount} → ${pts} pts (2x bonus). Balance: ${newTotalPts}. | 生日快樂！消費 NT$${amount} 獲得 ${pts} 點（雙倍），共 ${newTotalPts} 點。`
+      : `Earned ${pts} pts from NT$${amount}. Balance: ${newTotalPts}. | 消費 NT$${amount} 獲得 ${pts} 點，共 ${newTotalPts} 點。`);
+
+  // onEarnTransaction 會自動更新月排行 + 推薦回饋，這裡不必再呼叫
+
+  return {
+    success: true,
+    points: pts,
+    basePoints: basePts,
+    birthdayBonus: isBday,
+    memberUid: memberDoc.id,
+    memberName: member.name,
+    tier: newTier,
+    totalSpent: newTotalSpent,
+    newTotalPts,
+  };
 });
 
 exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
@@ -276,7 +477,7 @@ exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   await batchOps.commit();
-  await sendPush(uid, "🎁 兌換成功！", `已兌換：${reward.name_zh}`);
+  await sendPush(uid, "🎁 Redeemed! | 兌換成功", `Redeemed: ${reward.name_en || reward.name_zh} | 已兌換：${reward.name_zh}`);
   return { success: true };
 });
 
@@ -381,8 +582,8 @@ async function maybePayReferralReward(memberUid) {
     return { referrerUid: md.referredBy, paid: true };
   });
   if (result?.paid) {
-    await sendPush(result.referrerUid, "🎉 推薦獎勵到帳",
-      `您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
+    await sendPush(result.referrerUid, "🎉 Referral Reward | 推薦獎勵到帳",
+      `Your friend made their first purchase — you earned ${REWARD} points! | 您推薦的好友完成首次集點，獲得 ${REWARD} 點回饋！`);
   }
 }
 
@@ -554,6 +755,17 @@ exports.validateCart = onCall({ region: "us-central1" }, async (request) => {
 
 // ── 建立訂單（正式，含 ECPay）────────────────────
 
+// 產生訂單編號：BB + YYYYMMDD + 6 碼隨機（A-Z, 2-9）
+// 例：BB20260602K7P3X9
+function genOrderId() {
+  const now = new Date(Date.now() + 8 * 3600 * 1000); // 台北時區
+  const ymd = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let rand = "";
+  for (let i = 0; i < 6; i++) rand += chars[crypto.randomInt(chars.length)];
+  return `BB${ymd}${rand}`;
+}
+
 exports.createOrder = onCall({ region: "us-central1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
   try {
@@ -648,14 +860,14 @@ exports.createOrder = onCall({ region: "us-central1" }, async (request) => {
     type: "new_order",
     orderId,
     totalAmount: totalWithShipping,
-    message: `新訂單 ${orderId}，NT$${totalWithShipping}（含運費NT$${shippingFee}），取貨門市：${cvs.storeName}`,
+    message: `New order ${orderId} · NT$${totalWithShipping} (incl. shipping NT$${shippingFee}) · Pickup: ${cvs.storeName} | 新訂單 ${orderId}，NT$${totalWithShipping}（含運費 NT$${shippingFee}），取貨門市：${cvs.storeName}`,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     read: false,
   });
 
   // 推播通知店家端（新訂單）
   await sendPushToAdmins(
-    "🛍️ 新訂單！ New Order!",
+    "🛍️ New Order! | 新訂單",
     `NT$${totalWithShipping}｜${cvs.storeName}｜${cvs.name}`,
     { type: "new_order", orderId }
   );
@@ -819,10 +1031,10 @@ exports.scheduledLowStockAlert = onSchedule(
       .where("stock","<=",5)
       .get();
     if (snap.size === 0) return;
-    const items = snap.docs.map(d => `${d.data().name}（庫存：${d.data().stock}）`).join("\n");
+    const items = snap.docs.map(d => `${d.data().name} (${d.data().stock})`).join("\n");
     await db.collection("admin_notifications").add({
       type: "low_stock",
-      message: `以下商品庫存偏低：\n${items}`,
+      message: `Low stock items | 低庫存商品：\n${items}`,
       count: snap.size,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       read: false,
@@ -880,8 +1092,8 @@ exports.scheduledPointsExpiry = onSchedule(
           return deduct;
         });
         if (removed > 0) {
-          await sendPush(uid, "⏰ 點數到期通知",
-            `您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
+          await sendPush(uid, "⏰ Points Expired | 點數到期",
+            `${Number.isInteger(removed) ? removed : removed.toFixed(1)} point(s) have expired. | 您有 ${Number.isInteger(removed) ? removed : removed.toFixed(1)} 點已到期失效。`);
         }
       } catch (e) {
         console.error("[pointsExpiry] 扣點失敗 uid=" + uid, e.message);
@@ -903,8 +1115,8 @@ exports.scheduledPointsExpiry = onSchedule(
     });
     for (const [uid, info] of Object.entries(remind)) {
       try {
-        await sendPush(uid, "⏰ 點數即將到期",
-          `您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握時間使用！`);
+        await sendPush(uid, "⏰ Points Expiring Soon | 點數即將到期",
+          `You have ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} point(s) expiring within 7 days — use them soon! | 您有 ${Number.isInteger(info.total) ? info.total : info.total.toFixed(1)} 點將於 7 天內到期，把握使用！`);
         const wb = db.batch();
         info.refs.forEach((r) => wb.update(r, { expiryReminded: true }));
         await wb.commit();
@@ -912,6 +1124,218 @@ exports.scheduledPointsExpiry = onSchedule(
         console.error("[pointsExpiry] 提醒失敗 uid=" + uid, e.message);
       }
     }
+  }
+);
+
+// ── 每日生日推播：當天生日的會員收到祝賀 + 雙倍點提醒 ──────────
+// 生日當天消費集點本來就會自動加倍（見店家端 confirmAmount），這裡只負責主動提醒。
+
+// 台北時區「今天」的 {year, month, day}（兩位數字串）
+function todayTaipeiYMD() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  return {
+    y: parts.find(x => x.type === "year")?.value,
+    m: parts.find(x => x.type === "month")?.value,
+    d: parts.find(x => x.type === "day")?.value,
+  };
+}
+
+// 統一的生日推播內容
+const BIRTHDAY_PUSH_TITLE = "🎂 Happy Birthday! | 生日快樂";
+const BIRTHDAY_PUSH_BODY  = "Happy Birthday from BINI Blooms! Earn DOUBLE points on all purchases today 🎉 | 今天消費集點享雙倍點數！";
+
+async function runBirthdayGreeting() {
+  const { y, m, d } = todayTaipeiYMD();
+  if (!m || !d) return { sent: 0, matched: 0 };
+  const todayStr = `${y}-${m}-${d}`;
+
+  const snap = await db.collection("members").get();
+  let sent = 0, matched = 0;
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const bday = data.birthday;
+    if (!bday || typeof bday !== "string") continue;
+    const p = bday.split("-");
+    if (p.length < 3) continue;
+    if (p[1].padStart(2, "0") !== m || p[2].padStart(2, "0") !== d) continue;
+    matched++;
+    try {
+      const r = await sendPush(doc.id, BIRTHDAY_PUSH_TITLE, BIRTHDAY_PUSH_BODY);
+      if (r && r.success) {
+        sent++;
+        // 標記今日已送，避免 onPushTokenWritten 後續觸發重複推播
+        await doc.ref.update({ birthdayPushSentDate: todayStr }).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[birthday] 推播失敗 uid=" + doc.id, e.message);
+    }
+  }
+  console.log(`[birthday] 推播完成，符合生日 ${matched} 位，送出 ${sent} 位`);
+  return { sent, matched };
+}
+
+exports.scheduledBirthdayGreeting = onSchedule(
+  { schedule: "every day 08:00", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => { await runBirthdayGreeting(); }
+);
+
+// 店家手動觸發：補發或測試「今天」的生日推播（每日 08:00 之外的時段也可送）
+exports.adminTriggerBirthdayGreeting = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  // 僅 admin 可呼叫
+  const adminSnap = await db.collection("admins").doc(request.auth.uid).get();
+  if (!adminSnap.exists || adminSnap.data().disabled === true) {
+    throw new HttpsError("permission-denied", "非管理員");
+  }
+  const result = await runBirthdayGreeting();
+  return { success: true, ...result };
+});
+
+// ── 自動補發：push_tokens 寫入時，若該會員今天生日且尚未送過，立即補發 ──
+// 情境：客人在「生日當天」才加入主畫面/開通知，08:00 排程當下 token 還不存在或失效，
+// 等他完成開通知（push_tokens 寫入）這一刻自動補上生日推播。
+exports.onPushTokenWritten_BirthdayCheck = onDocumentWritten(
+  { document: "push_tokens/{uid}", region: "us-central1" },
+  async (event) => {
+    const uid = event.params.uid;
+    const after = event.data?.after?.data();
+    if (!after) return; // 刪除事件，不處理
+
+    // 確認真的有 token 可推
+    const hasToken =
+      !!after.token ||
+      (after.tokens && typeof after.tokens === "object" &&
+        Object.values(after.tokens).some(t => !!t));
+    if (!hasToken) return;
+
+    try {
+      const memberRef = db.collection("members").doc(uid);
+      const memberSnap = await memberRef.get();
+      if (!memberSnap.exists) return;
+      const member = memberSnap.data();
+
+      const bday = member.birthday;
+      if (!bday || typeof bday !== "string") return;
+      const p = bday.split("-");
+      if (p.length < 3) return;
+
+      const { y, m, d } = todayTaipeiYMD();
+      if (!m || !d) return;
+      if (p[1].padStart(2, "0") !== m || p[2].padStart(2, "0") !== d) return;
+
+      const todayStr = `${y}-${m}-${d}`;
+      if (member.birthdayPushSentDate === todayStr) {
+        console.log(`[birthdayOnToken] uid=${uid} 今日已送過，略過`);
+        return;
+      }
+
+      console.log(`[birthdayOnToken] uid=${uid} 生日當天 token 寫入 → 立即補發`);
+      const r = await sendPush(uid, BIRTHDAY_PUSH_TITLE, BIRTHDAY_PUSH_BODY);
+      if (r && r.success) {
+        await memberRef.update({ birthdayPushSentDate: todayStr }).catch(() => {});
+        console.log(`[birthdayOnToken] uid=${uid} 補發成功`);
+      } else {
+        console.warn(`[birthdayOnToken] uid=${uid} sendPush 未送出（token 可能仍無效）`);
+      }
+    } catch (e) {
+      console.error(`[birthdayOnToken] uid=${uid} 失敗:`, e.message);
+    }
+  }
+);
+
+// ── 每週積點排行頒獎 ──────────
+// 每週五 22:00（台北）跑一次：計算上週五 22:00 ~ 本週五 22:00 之間，
+// 各會員 earn 點數總和，前 5 名分別加贈 5/4/3/2/1 點 + 推播。
+// 加贈用獨立 type='rank_bonus'，不會被下週排行算入（避免自增循環）。
+
+const TAIPEI_OFFSET_HOURS = 8;
+// 取得「最近 ≤ now 的週五 22:00 (台北)」對應的 UTC ms
+function getMostRecentFridayCutoffMs(now = new Date()) {
+  const nowMs = now.getTime();
+  const t = new Date(nowMs + TAIPEI_OFFSET_HOURS * 3600 * 1000);
+  // t 的 UTC 部分代表「台北本地時間」
+  const dow = t.getUTCDay(); // 0=Sun, 1=Mon, …, 5=Fri, 6=Sat
+  const todayFri22Ms = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), 22, 0, 0)
+                     - TAIPEI_OFFSET_HOURS * 3600 * 1000;
+  const daysToFri = (5 - dow + 7) % 7;
+  let candidate = todayFri22Ms + daysToFri * 86400000;
+  while (candidate > nowMs) candidate -= 7 * 86400000;
+  return candidate;
+}
+
+exports.scheduledWeeklyRankPrize = onSchedule(
+  // cron 0 22 * * 5 = 每週五 22:00
+  { schedule: "0 22 * * 5", timeZone: "Asia/Taipei", region: "us-central1" },
+  async () => {
+    const end = getMostRecentFridayCutoffMs(); // 通常等於 now（22:00 觸發）
+    const start = end - 7 * 86400000;
+    console.log(`[weeklyRankPrize] 上週週期 [${new Date(start).toISOString()}, ${new Date(end).toISOString()})`);
+
+    const txSnap = await db.collection("transactions")
+      .where("type", "==", "earn")
+      .where("createdAt", ">=", admin.firestore.Timestamp.fromMillis(start))
+      .where("createdAt", "<",  admin.firestore.Timestamp.fromMillis(end))
+      .get();
+    console.log(`[weeklyRankPrize] 上週共 ${txSnap.size} 筆 earn`);
+
+    // 加總每位 uid 點數
+    const weekPts = {};
+    txSnap.forEach(d => {
+      const { uid, points } = d.data();
+      if (uid) weekPts[uid] = Math.round(((weekPts[uid] || 0) + (points || 0)) * 10) / 10;
+    });
+
+    const sorted = Object.entries(weekPts).sort((a, b) => b[1] - a[1]);
+    const top5 = sorted.slice(0, 5);
+    if (!top5.length) { console.log("[weeklyRankPrize] 上週無 earn，跳過頒獎"); return; }
+
+    const rulesSnap = await db.collection("config").doc("point_rules").get();
+    const PRIZES = (rulesSnap.exists && Array.isArray(rulesSnap.data()?.rankPrizes))
+      ? rulesSnap.data().rankPrizes
+      : [5, 4, 3, 2, 1]; // 預設值
+    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 90 * 86400000); // 90 天有效
+    let awarded = 0;
+    for (let i = 0; i < top5.length; i++) {
+      const [uid, weekTotalPts] = top5[i];
+      const rank = i + 1;
+      const bonus = PRIZES[i];
+      try {
+        const txRef = db.collection("transactions").doc();
+        const batchRef = db.collection("point_batches").doc();
+        const memberRef = db.collection("members").doc(uid);
+        await db.batch()
+          .set(txRef, {
+            uid, type: "rank_bonus", points: bonus,
+            rank, weekTotalPts,
+            desc:   `本週積點第 ${rank} 名加贈 ${bonus} 點`,
+            descEn: `Top ${rank} this week — bonus ${bonus} pts`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+          .set(batchRef, {
+            uid, points: bonus, remaining: bonus,
+            earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+            expiresAt, source: "rank_bonus", txId: txRef.id,
+          })
+          .update(memberRef, {
+            points: admin.firestore.FieldValue.increment(bonus),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+          .commit();
+
+        await sendPush(
+          uid,
+          `🏆 Weekly Top ${rank}! | 本週第 ${rank} 名`,
+          `Congrats! You're #${rank} on this week's leaderboard — bonus ${bonus} pts! 🎉 | 恭喜獲得本週積點第 ${rank} 名，加贈 ${bonus} 點！`
+        );
+        awarded++;
+        console.log(`[weeklyRankPrize] 第 ${rank} 名 uid=${uid} 上週總點=${weekTotalPts} 加贈+${bonus}`);
+      } catch (e) {
+        console.error(`[weeklyRankPrize] 第 ${rank} 名 uid=${uid} 失敗:`, e.message);
+      }
+    }
+    console.log(`[weeklyRankPrize] 完成，共頒發 ${awarded} 位`);
   }
 );
 
@@ -980,8 +1404,8 @@ exports.onChatMessageCreated = onDocumentCreated(
     try {
       // 取得聊天室資訊
       const chatDoc = await db.collection("chats").doc(chatId).get();
-      const memberName = chatDoc.data()?.memberName || "會員";
-      const msgText = data.text || (data.imageUrl ? "[圖片]" : "新訊息");
+      const memberName = chatDoc.data()?.memberName || "Member";
+      const msgText = data.text || (data.imageUrl ? "[Image | 圖片]" : "New message | 新訊息");
 
       // 讀取所有 admin tokens
       const adminSnap = await db.collection("admin_tokens").get();
