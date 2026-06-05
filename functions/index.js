@@ -1,6 +1,6 @@
 /**
  * BINI Blooms — Firebase Cloud Functions
- * Version: 3.0.5  (firebase-functions v2 / Node 22)
+ * Version: 3.0.6  (firebase-functions v2 / Node 22)
  */
 
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
@@ -179,9 +179,12 @@ async function updateMonthlyRanks() {
   console.log(`✅ [updateMonthlyRanks] 完成，共更新 ${uids.length} 位會員`);
 }
 
+// 與 firestore.rules 的判定一致：admin 文件存在且未被明確停用即視為有效
+// 過去用 active === true 過於嚴格，會導致 rules 通過但 functions 拒絕的邊界情況
 async function checkAdmin(uid) {
+  if (!uid) return false;
   const doc = await db.collection("admins").doc(uid).get();
-  return doc.exists && doc.data()?.active === true;
+  return doc.exists && doc.data()?.disabled !== true;
 }
 
 // 推播給所有店家端（讀 admin_tokens 集合）
@@ -304,6 +307,135 @@ exports.confirmPoints = onCall({ region: "us-central1" }, async (request) => {
   }
 
   return { success: true, points: rawPoints, total: newTotal };
+});
+
+// ─────────────────────────────────────────────
+//  POS 系統用：以手機號直接集點
+// ─────────────────────────────────────────────
+// 設計目標：POS 結帳完成後不需走 QR 流程，直接以會員手機號 + 金額完成集點。
+// 業務邏輯與後台 admin-app.js 的 confirmAmount 一致：
+//  - 動態讀 config/point_rules 的 BASE_UNIT / BASE_POINTS / TIER_RATES
+//  - 依新累計消費決定等級
+//  - 生日當天點數自動加倍
+//  - 90 天到期；批次寫入 transactions / point_batches / members
+//  - 推播給會員
+// 權限：需 admin 帳號（與 firestore.rules 的 isAdmin 一致）
+exports.confirmPointsByPhone = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
+  if (!(await checkAdmin(request.auth.uid))) {
+    throw new HttpsError("permission-denied", "需 admin 權限");
+  }
+
+  const phone = String(request.data?.phone || "").trim();
+  const amount = Number(request.data?.amount);
+  if (!phone) throw new HttpsError("invalid-argument", "缺少手機號");
+  if (!amount || amount <= 0) throw new HttpsError("invalid-argument", "金額需大於 0");
+
+  // 查會員
+  const memberSnap = await db.collection("members").where("phone", "==", phone).limit(1).get();
+  if (memberSnap.empty) throw new HttpsError("not-found", "查無此手機號會員");
+  const memberDoc = memberSnap.docs[0];
+  const memberRef = memberDoc.ref;
+  const member = memberDoc.data();
+
+  // 讀取動態集點規則（與後台設定頁同步）
+  let BASE_UNIT = 200, BASE_POINTS = 1;
+  let TIER_RATES = { normal: 1.0, vip: 1.3, vvip: 1.5, vvvip: 2.0 };
+  try {
+    const rulesSnap = await db.collection("config").doc("point_rules").get();
+    if (rulesSnap.exists) {
+      const r = rulesSnap.data();
+      if (r.baseUnit)   BASE_UNIT   = r.baseUnit;
+      if (r.basePoints) BASE_POINTS = r.basePoints;
+      if (r.rates)      TIER_RATES  = { ...TIER_RATES, ...r.rates };
+    }
+  } catch (e) { console.warn("[confirmPointsByPhone] 讀規則失敗:", e.message); }
+
+  // 依新累計消費決定等級
+  const newTotalSpent = (member.totalSpent || 0) + amount;
+  const tierIdx = RULES.TIER_THRESHOLDS.filter(t => newTotalSpent >= t).length - 1;
+  const newTier = RULES.TIER_NAMES[tierIdx] || "normal";
+  const rate = TIER_RATES[newTier] ?? 1.0;
+
+  // 集點公式：floor(金額 / BASE_UNIT) × BASE_POINTS × 等級倍率
+  const basePts = Math.round(Math.floor(amount / BASE_UNIT) * BASE_POINTS * rate * 10) / 10;
+
+  // 生日加倍判定（台北時區）
+  const isBday = (() => {
+    if (!member.birthday || typeof member.birthday !== "string") return false;
+    const p = member.birthday.split("-");
+    if (p.length < 3) return false;
+    const { m, d } = todayTaipeiYMD();
+    return p[1].padStart(2, "0") === m && p[2].padStart(2, "0") === d;
+  })();
+  const pts = isBday ? basePts * 2 : basePts;
+
+  // 0 點不寫入交易（金額未達 BASE_UNIT 門檻）
+  if (pts <= 0) {
+    return {
+      success: true, points: 0, basePoints: 0, birthdayBonus: false,
+      memberUid: memberDoc.id, memberName: member.name,
+      tier: newTier, totalSpent: newTotalSpent,
+      newTotalPts: member.points || 0,
+      note: "金額未達基礎門檻，未發點",
+    };
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setMonth(expiresAt.getMonth() + RULES.POINTS_EXPIRE_MONTHS);
+
+  const txRef    = db.collection("transactions").doc();
+  const batchRef = db.collection("point_batches").doc();
+  const newTotalPts = (member.points || 0) + pts;
+
+  const desc   = `消費集點 NT${amount}（${newTier}）${isBday ? " 🎂生日加倍" : ""}`;
+  const descEn = `Points earned NT${amount} (${newTier})${isBday ? " 🎂Birthday x2" : ""}`;
+
+  await db.batch()
+    .set(txRef, {
+      uid: memberDoc.id, type: "earn",
+      points: pts, amount, tier: newTier, rate,
+      basePoints: basePts, birthdayBonus: isBday,
+      desc, descEn,
+      source: "pos",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .set(batchRef, {
+      uid: memberDoc.id, points: pts, remaining: pts, consumed: 0,
+      amount, tier: newTier,
+      earnedAt:  admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+      txId: txRef.id,
+    })
+    .update(memberRef, {
+      points:     admin.firestore.FieldValue.increment(pts),
+      totalSpent: admin.firestore.FieldValue.increment(amount),
+      visitCount: admin.firestore.FieldValue.increment(1),
+      tier: newTier,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .commit();
+
+  await sendPush(memberDoc.id,
+    isBday ? "🎂 Birthday Double Points! | 生日加倍集點"
+           : "🎉 Points Earned! | 集點成功",
+    isBday
+      ? `Happy Birthday! NT$${amount} → ${pts} pts (2x bonus). Balance: ${newTotalPts}. | 生日快樂！消費 NT$${amount} 獲得 ${pts} 點（雙倍），共 ${newTotalPts} 點。`
+      : `Earned ${pts} pts from NT$${amount}. Balance: ${newTotalPts}. | 消費 NT$${amount} 獲得 ${pts} 點，共 ${newTotalPts} 點。`);
+
+  // onEarnTransaction 會自動更新月排行 + 推薦回饋，這裡不必再呼叫
+
+  return {
+    success: true,
+    points: pts,
+    basePoints: basePts,
+    birthdayBonus: isBday,
+    memberUid: memberDoc.id,
+    memberName: member.name,
+    tier: newTier,
+    totalSpent: newTotalSpent,
+    newTotalPts,
+  };
 });
 
 exports.redeemReward = onCall({ region: "us-central1" }, async (request) => {
@@ -622,6 +754,17 @@ exports.validateCart = onCall({ region: "us-central1" }, async (request) => {
 });
 
 // ── 建立訂單（正式，含 ECPay）────────────────────
+
+// 產生訂單編號：BB + YYYYMMDD + 6 碼隨機（A-Z, 2-9）
+// 例：BB20260602K7P3X9
+function genOrderId() {
+  const now = new Date(Date.now() + 8 * 3600 * 1000); // 台北時區
+  const ymd = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let rand = "";
+  for (let i = 0; i < 6; i++) rand += chars[crypto.randomInt(chars.length)];
+  return `BB${ymd}${rand}`;
+}
 
 exports.createOrder = onCall({ region: "us-central1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "需要登入");
