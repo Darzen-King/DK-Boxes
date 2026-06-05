@@ -42,7 +42,7 @@
     },
     {
       "target": "pos",
-      "public": "public-pos",
+      "public": "BINI-POS",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }],
       "headers": [
