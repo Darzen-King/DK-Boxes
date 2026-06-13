@@ -9,7 +9,11 @@
 <meta name="theme-color" content="#3d0c1a">
 <title>BINI Backend</title>
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/shop-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/shop-icon.png?v=1">
+<link rel="icon" type="image/png" sizes="512x512" href="/shop-icon-512.png?v=1">
+<link rel="shortcut icon" type="image/png" href="/shop-icon.png?v=1">
+<link rel="apple-touch-icon" href="/shop-icon.png?v=1">
+<link rel="apple-touch-icon" sizes="512x512" href="/shop-icon-512.png?v=1">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--dark:#3d0c1a;--brown:#6B2737;--pink:#C8717A;--pale:#FCE8ED;--bg:#fdf5f7;--border:#EACDD2}
@@ -213,9 +217,9 @@ input:focus,textarea:focus{border-color:var(--pink)}
         </button>
       </div>
     </div>
-    <!-- Banner 圖片 -->
+    <!-- Banner 圖片：副檔名 .jpg 與實際 JPEG 格式一致；不再用 onerror 永久隱藏，避免一次失敗整個 PWA 都看不到 -->
     <div style="width:100%;overflow:hidden;line-height:0;margin:0;padding:0">
-      <img src="/banner.png" alt="BINI Blooms" style="width:100%;display:block;object-fit:cover;margin:0;padding:0;vertical-align:top" onerror="this.style.display='none'">
+      <img src="/banner.jpg?v=3" alt="BINI Blooms" decoding="async" loading="eager" style="width:100%;display:block;object-fit:cover;margin:0;padding:0;vertical-align:top">
     </div>
   </div>
 
@@ -376,22 +380,97 @@ input:focus,textarea:focus{border-color:var(--pink)}
     </div>
   </div>
 
+  <!-- 推廣 -->
+  <div class="tab-page" id="tab-promote-page">
+    <div style="margin-top:0">
+      <div class="card">
+        <div class="card-title"><span data-zh="📲 邀請新會員加入" data-en="📲 Invite New Members">📲 邀請新會員加入</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.6">
+          <span data-zh="把下面的 QR Code 給客人掃描，即可下載 BINI Blooms 會員 App 並加入會員。" data-en="Customers scan the QR Code below to install the BINI Blooms member app and join.">把下面的 QR Code 給客人掃描，即可下載 BINI Blooms 會員 App 並加入會員。</span>
+        </p>
+        <div style="display:flex;justify-content:center;padding:6px 0">
+          <img src="/qr-client.png?v=1" alt="BINI Blooms Client App QR" style="width:100%;max-width:280px;border-radius:14px;background:#fff;box-shadow:0 2px 12px rgba(61,12,26,.1)" loading="lazy">
+        </div>
+        <p style="font-size:12px;color:#888;text-align:center;margin-top:10px">
+          <span data-zh="網址：" data-en="URL: ">網址：</span><a href="https://bini-blooms-client.web.app" target="_blank" rel="noopener" style="color:var(--pink);text-decoration:none;font-weight:600">bini-blooms-client.web.app</a>
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span data-zh="📘 Facebook 粉絲頁" data-en="📘 Facebook Page">📘 Facebook 粉絲頁</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.6">
+          <span data-zh="追蹤我們的 Facebook，掌握最新優惠與新品資訊。" data-en="Follow us on Facebook for the latest promotions and new arrivals.">追蹤我們的 Facebook，掌握最新優惠與新品資訊。</span>
+        </p>
+        <div style="display:flex;justify-content:center;padding:6px 0">
+          <img src="/qr-facebook.png?v=1" alt="BINI Blooms Facebook QR" style="width:100%;max-width:280px;border-radius:14px;background:#fff;box-shadow:0 2px 12px rgba(61,12,26,.1)" loading="lazy">
+        </div>
+        <p style="font-size:12px;color:#888;text-align:center;margin-top:10px;line-height:1.5">
+          <span data-zh="粉絲頁：" data-en="Page: ">粉絲頁：</span><a href="https://www.facebook.com/samstorephilgoods" target="_blank" rel="noopener" style="color:var(--pink);text-decoration:none;font-weight:600">Bini Blooms Brand Boutique</a>
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span data-zh="📷 Instagram" data-en="📷 Instagram">📷 Instagram</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.6">
+          <span data-zh="追蹤我們的 Instagram，看更多商品照片。" data-en="Follow us on Instagram for more product photos.">追蹤我們的 Instagram，看更多商品照片。</span>
+        </p>
+        <div style="display:flex;justify-content:center;padding:6px 0">
+          <img src="/qr-instagram.png?v=1" alt="BINI Blooms Instagram QR" style="width:100%;max-width:280px;border-radius:14px;background:#fff;box-shadow:0 2px 12px rgba(61,12,26,.1)" loading="lazy">
+        </div>
+        <p style="font-size:12px;color:#888;text-align:center;margin-top:10px;line-height:1.5">
+          <span data-zh="帳號：" data-en="Account: ">帳號：</span><a href="https://www.instagram.com/biniblooms250808" target="_blank" rel="noopener" style="color:var(--pink);text-decoration:none;font-weight:600">@biniblooms250808</a>
+        </p>
+      </div>
+
+      <p style="font-size:12px;color:#888;text-align:center;line-height:1.7;padding:0 8px">
+        <span data-zh="💡 在手機上長按 QR 圖即可儲存或分享給客人。" data-en="💡 Long-press any QR on mobile to save or share with customers.">💡 在手機上長按 QR 圖即可儲存或分享給客人。</span>
+      </p>
+
+      <!-- 生日推播手動觸發（補發/測試用） -->
+      <div class="card">
+        <div class="card-title"><span data-zh="🎂 生日推播工具" data-en="🎂 Birthday Push Tool">🎂 生日推播工具</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px;line-height:1.6">
+          <span data-zh="每日台北時間 08:00 自動發送給當天生日的會員。若會員 08:00 之後才註冊、或上次推播失敗，可用此鈕手動補發。" data-en="Auto-sent at 08:00 Taipei daily to members whose birthday is today. Use this button to resend if a member registered after 08:00 or the previous push failed.">每日台北時間 08:00 自動發送給當天生日的會員。若會員 08:00 之後才註冊、或上次推播失敗，可用此鈕手動補發。</span>
+        </p>
+        <button class="btn btn-outline" id="btn-trigger-birthday" onclick="triggerBirthdayNow()" style="width:100%">
+          <span data-zh="🎂 立即發送今日生日推播" data-en="🎂 Send Today's Birthday Push Now">🎂 立即發送今日生日推播</span>
+        </button>
+        <div id="birthday-trigger-msg" style="margin-top:8px;font-size:13px;text-align:center;color:#888"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 設定 -->
   <div class="tab-page" id="tab-settings-page">
     <div style="margin-top:12px">
+
+      <!-- 設定密碼鎖：解鎖後才顯示設定內容 -->
+      <div id="settings-lock" class="card" style="text-align:center">
+        <div style="font-size:32px;margin-bottom:6px">🔒</div>
+        <div class="card-title" style="justify-content:center"><span data-zh="設定（已鎖定）" data-en="Settings (Locked)">設定（已鎖定）</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px"><span data-zh="請輸入密碼以存取所有設定" data-en="Enter password to access settings">請輸入密碼以存取所有設定</span></p>
+        <input type="password" id="settings-pw" autocomplete="off" placeholder="輸入密碼 / Password" style="width:100%;padding:11px 13px;border:1.5px solid #e0a0b0;border-radius:10px;font-size:16px;margin-bottom:8px;box-sizing:border-box" onkeydown="if(event.key==='Enter')unlockSettings()">
+        <button onclick="unlockSettings()" class="btn btn-primary" style="width:100%">🔓 <span data-zh="解鎖設定" data-en="Unlock Settings">解鎖設定</span></button>
+        <div id="settings-lock-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
+      </div>
+
+      <!-- 設定內容（解鎖後顯示） -->
+      <div id="settings-content" style="display:none">
 
       <!-- 集點規則設定 -->
       <div class="card">
         <div class="card-title"><span data-zh="💰 集點規則設定" data-en="💰 Point Settings">💰 集點規則設定</span></div>
         <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.7"><span data-zh="設定消費金額與點數的對應關係，以及各會員等級的點數倍數。儲存後客戶端將即時更新。" data-en="Set the spending-to-points ratio and tier multipliers. Changes apply instantly to the customer app.">設定消費金額與點數的對應關係，以及各會員等級的點數倍數。儲存後客戶端將即時更新。</span></p>
 
-        <label><span data-zh="基本單位金額（NT$）" data-en="Base Unit Amount (NT$)">基本單位金額（NT$）</span></label>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          <span style="font-size:13px;color:#888">NT$</span>
-          <input type="number" id="settings-base-unit" min="1" step="1" style="width:120px" value="200" oninput="updateSettingsPreview()">
-          <span style="font-size:13px;color:#888"><span data-zh="消費 = 基礎 1 點" data-en="spent = 1 base point">消費 = 基礎 1 點</span></span>
+        <label><span data-zh="基礎集點規則" data-en="Base Point Rule">基礎集點規則</span></label>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+          <span style="font-size:13px;color:#888"><span data-zh="每消費 NT$" data-en="Every NT$">每消費 NT$</span></span>
+          <input type="number" id="settings-base-unit" min="1" step="1" style="width:90px" value="200" oninput="updateSettingsPreview()">
+          <span style="font-size:13px;color:#888"><span data-zh="給" data-en="=">給</span></span>
+          <input type="number" id="settings-base-points" min="0.1" step="0.1" style="width:80px" value="1" oninput="updateSettingsPreview()">
+          <span style="font-size:13px;color:#888"><span data-zh="點（基礎）" data-en="point(s) (base)">點（基礎）</span></span>
         </div>
-        <p style="font-size:12px;color:#b07080;margin-bottom:16px"><span data-zh="例：設為 200，表示每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）" data-en="e.g. 200 means every NT$200 earns 1 base point × tier multiplier">例：設為 200，表示每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）</span></p>
+        <p style="font-size:12px;color:#b07080;margin-bottom:16px"><span data-zh="例：設為 NT$200 給 1 點，每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）。NT$200 給 3 點可做為加碼活動。" data-en="e.g. NT$200 = 1 base point × tier multiplier. Set NT$200 = 3 points for promotional events.">例：設為 NT$200 給 1 點，每消費 NT$200 獲得基礎 1 點（再乘以等級倍數）。NT$200 給 3 點可做為加碼活動。</span></p>
 
         <label><span data-zh="各會員等級點數倍數" data-en="Points Multiplier per Tier">各會員等級點數倍數</span></label>
         <div id="tier-rate-inputs" style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
@@ -480,6 +559,13 @@ input:focus,textarea:focus{border-color:var(--pink)}
         <button class="btn btn-outline" style="margin-top:4px" onclick="handleForgotPw_settings()"><span data-zh="忘記密碼？寄送重設郵件" data-en="Forgot password? Send reset email">忘記密碼？寄送重設郵件</span></button>
       </div>
       <div class="card">
+        <div class="card-title"><span data-zh="推播通知" data-en="Push Notifications">推播通知</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:12px;line-height:1.6">
+          <span data-zh="如果收不到推播通知（如新訂單、新客服訊息），點此重新註冊。" data-en="Not receiving push (new orders, chat messages, etc.)? Tap to re-register.">如果收不到推播通知（如新訂單、新客服訊息），點此重新註冊。</span>
+        </p>
+        <button class="btn btn-outline" onclick="reEnableAdminPush()"><span data-zh="重新啟用推播" data-en="Re-enable Push">重新啟用推播</span></button>
+      </div>
+      <div class="card">
         <div class="card-title"><span data-zh="系統資訊" data-en="System Info">系統資訊</span></div>
         <div style="font-size:13px;color:#888;line-height:2">
           <span data-zh="版本：v3.0.44-prod" data-en="Version: v3.0.44-prod">版本：v3.0.44-prod</span><br>
@@ -487,6 +573,43 @@ input:focus,textarea:focus{border-color:var(--pink)}
           <span data-zh="後台：" data-en="Admin: ">後台：</span><a href="https://bini-blooms-admin.web.app" target="_blank" style="color:var(--pink)">bini-blooms-admin.web.app</a><br>
           <span data-zh="確認碼規則：當天日期 MMDD（如5月16日 = 0516）" data-en="Confirm code: Today's date MMDD (e.g. May 16 = 0516)">確認碼規則：當天日期 MMDD（如5月16日 = 0516）</span>
         </div>
+      </div>
+
+      <!-- 週排行獎勵設定 -->
+      <div class="card">
+        <div class="card-title"><span data-zh="🏆 週排行獎勵設定" data-en="🏆 Weekly Rank Prizes">🏆 週排行獎勵設定</span></div>
+        <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.7"><span data-zh="設定每週五22:00結算時，積點前五名各獲得的加贈點數（系統自動派送）。" data-en="Set bonus points for top 5 at Friday 22:00 weekly reset (auto-awarded).">設定每週五22:00結算時，積點前五名各獲得的加贈點數（系統自動派送）。</span></p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">🥇 <span data-zh="第 1 名" data-en="1st">第 1 名</span></span>
+            <input type="number" id="rank-prize-1" min="0" step="1" style="width:80px" value="5">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">🥈 <span data-zh="第 2 名" data-en="2nd">第 2 名</span></span>
+            <input type="number" id="rank-prize-2" min="0" step="1" style="width:80px" value="4">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">🥉 <span data-zh="第 3 名" data-en="3rd">第 3 名</span></span>
+            <input type="number" id="rank-prize-3" min="0" step="1" style="width:80px" value="3">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">4️⃣ <span data-zh="第 4 名" data-en="4th">第 4 名</span></span>
+            <input type="number" id="rank-prize-4" min="0" step="1" style="width:80px" value="2">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:70px;font-size:13px;font-weight:600">5️⃣ <span data-zh="第 5 名" data-en="5th">第 5 名</span></span>
+            <input type="number" id="rank-prize-5" min="0" step="1" style="width:80px" value="1">
+            <span style="font-size:13px;color:#888"><span data-zh="點" data-en="pts">點</span></span>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveRankPrizes()" id="btn-save-rank-prizes">
+          <span data-zh="💾 儲存排行獎勵" data-en="💾 Save Rank Prizes">💾 儲存排行獎勵</span>
+        </button>
+        <div id="rank-prizes-save-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
       </div>
 
       <!-- 開發工具 -->
@@ -521,6 +644,8 @@ input:focus,textarea:focus{border-color:var(--pink)}
         </div>
         <div id="clear-data-msg" style="margin-top:8px;font-size:13px;text-align:center"></div>
       </div>
+
+      </div><!-- /settings-content -->
     </div>
   </div>
 
@@ -549,6 +674,10 @@ input:focus,textarea:focus{border-color:var(--pink)}
   <button class="admin-bnav-btn" id="tab-analytics" onclick="switchTab('analytics',this)">
     <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
     <span>&#20998;&#26512;</span>
+  </button>
+  <button class="admin-bnav-btn" id="tab-promote" onclick="switchTab('promote',this)">
+    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
+    <span>推廣</span>
   </button>
   <button class="admin-bnav-btn" id="tab-settings" onclick="switchTab('settings',this)">
     <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>

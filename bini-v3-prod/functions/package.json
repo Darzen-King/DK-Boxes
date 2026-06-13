@@ -1,6 +1,6 @@
 {
   "name": "bini-blooms-functions",
-  "description": "BINI Blooms Firebase Cloud Functions v3.0.4",
+  "description": "BINI Blooms Firebase Cloud Functions v3.0.6",
   "scripts": {
     "lint": "eslint .",
     "serve": "firebase emulators:start --only functions",

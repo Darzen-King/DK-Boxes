@@ -338,10 +338,14 @@ window.handleForgotPwd = async function() {
 };
 
 // ── 註冊流程：步驟1 輸入手機發 OTP ──
+// 防呆：短時間（3 秒）內重複按取得驗證碼按鈕不會觸發，避免 reCAPTCHA 競爭與 SMS 重複扣額度
+let _otpSending = false;
 window.handleSendOTP = async function() {
+  if (_otpSending) return; // 靜默忽略，不跳錯誤、不觸發 API
   const phone = document.getElementById('reg-phone').value.trim();
   const msgEl = document.getElementById('reg-msg');
   if (!/^09\d{8}$/.test(phone)) { setMsg(msgEl,t('請輸入正確手機號碼（09開頭10碼）','Enter valid phone number (10 digits)'),'error'); return; }
+  _otpSending = true;
   regPhone = phone;
   setMsg(msgEl,t('發送中...','Sending...'),'');
   try {
@@ -370,6 +374,8 @@ window.handleSendOTP = async function() {
     };
     setMsg(msgEl, msgs[e.code] || t('發送失敗（'+e.code+'）','Failed: '+e.code), 'error');
   }
+  // 3 秒 cooldown：成功或失敗都一樣，避免使用者狂按
+  setTimeout(() => { _otpSending = false; }, 3000);
 };
 
 // ── 步驟2 驗證 OTP ──
@@ -903,13 +909,80 @@ async function loadExpiryInfo() {
 }
 
 // ── 即時相機掃描（A: BarcodeDetector + B: jsQR fallback）──
+// iOS WebKit 已知問題：getUserMedia() 成功不代表 video 已出畫面。
+// 必須明確等 loadedmetadata/canplay/playing 並驗證 videoWidth > 0；
+// 若 play() pending 或 videoWidth 永遠是 0 → 退回較寬鬆的 constraints，最後顯示拍照備援。
+// 參考 WebKit bug 252465 / 179363
 let _scanStream = null, _scanRaf = null, _scanDetector = null, _scanCanvas = null;
 let _scanActive = false, _scanLastTry = 0, _scanDetectorInited = false;
+let _scanLoopStartTs = 0; // 看門狗起算時間，0=尚未開始等
+
+// 等 video 真正出現第一幀（videoWidth > 0），逾時拒絕
+function waitForVideoReady(video, timeoutMs = 2500) {
+  return new Promise((resolve, reject) => {
+    if (video.readyState >= 2 && video.videoWidth > 0) return resolve();
+    let resolved = false;
+    const cleanup = () => {
+      video.removeEventListener('loadedmetadata', done);
+      video.removeEventListener('canplay', done);
+      video.removeEventListener('playing', done);
+    };
+    const done = () => {
+      if (resolved) return;
+      if (video.videoWidth > 0) {
+        resolved = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve();
+      }
+    };
+    const timer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      reject(new Error('video_ready_timeout'));
+    }, timeoutMs);
+    video.addEventListener('loadedmetadata', done);
+    video.addEventListener('canplay', done);
+    video.addEventListener('playing', done);
+  });
+}
+
+// 嘗試用一組 constraints 啟動相機；每次嘗試前先徹底清理舊 stream / video 元素狀態
+async function tryStartCamera(constraints) {
+  // 先 cleanup 舊狀態（多次 getUserMedia 在 iOS 上會打架，參考 WebKit bug 179363）
+  if (_scanStream) {
+    try { _scanStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    _scanStream = null;
+  }
+  const video = document.getElementById('scan-video');
+  if (!video) throw new Error('no_video_element');
+  try { video.pause(); video.srcObject = null; video.load?.(); } catch (e) {}
+
+  // iOS 必要屬性（HTML 已設，但保險再寫一次）
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  video.muted = true;
+  video.autoplay = true;
+
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  _scanStream = stream;
+  video.srcObject = stream;
+
+  try {
+    await video.play();
+  } catch (e) {
+    // play() 在 iOS PWA 偶爾會 reject，不能吞掉；拋上去讓上層走 retry / fallback
+    console.warn('[scan] video.play() failed:', e.name, e.message);
+    throw e;
+  }
+  await waitForVideoReady(video, 2500);
+  return true;
+}
 
 async function startLiveScan() {
   if (_scanActive) return;
   _scanActive = true;
-  const video = document.getElementById('scan-video');
   const status = document.getElementById('scan-status');
   const viewfinder = document.getElementById('scan-viewfinder');
   const fallbackBtn = document.getElementById('scan-fallback-btn');
@@ -927,50 +1000,82 @@ async function startLiveScan() {
     } catch (e) { _scanDetector = null; }
   }
 
-  // 2. 啟動相機
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('no_getUserMedia');
-    _scanStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
-    video.srcObject = _scanStream;
-    // iOS Safari 需要明確 play()，並用 catch 吞掉非致命錯誤
-    try { await video.play(); } catch (e) {}
-    if (status) status.innerHTML = `<span style="color:var(--brown)">📷 ${t('對準 QR Code，自動辨識中…','Aim at the QR Code…')}</span>`;
-    if (fallbackBtn) fallbackBtn.style.display = 'none';
-    _scanLastTry = 0;
-    scanLoop();
-  } catch (err) {
-    console.warn('getUserMedia failed:', err.name, err.message);
+  // 2. 啟動相機（多組 constraints 由嚴格到寬鬆，iOS 對解析度指定較敏感）
+  if (!navigator.mediaDevices?.getUserMedia) {
     _scanActive = false;
-    const denied = ['NotAllowedError','PermissionDeniedError','SecurityError'].includes(err.name);
-    if (status) {
-      status.innerHTML = denied
-        ? `<span style="color:#c0392b">⚠️ ${t('相機權限未開啟','Camera permission denied')}</span><br><span style="font-size:12px;color:#888">${t('iOS：設定 → Safari → 相機 → 允許','iOS: Settings → Safari → Camera → Allow')}</span>`
-        : `<span style="color:#c0392b">⚠️ ${t('無法啟動相機，請改用拍照','Cannot start camera, use photo')}</span>`;
-    }
-    if (fallbackBtn) fallbackBtn.style.display = 'block';   // 顯示拍照備援
+    if (status) status.innerHTML = `<span style="color:#c0392b">⚠️ ${t('此瀏覽器不支援相機，請改用拍照','Camera not supported, use photo')}</span>`;
+    if (fallbackBtn) fallbackBtn.style.display = 'block';
+    return;
   }
+  if (status) status.textContent = t('啟動相機中…','Starting camera…');
+
+  const tryList = [
+    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: true, audio: false },
+  ];
+  let lastErr = null;
+  for (let i = 0; i < tryList.length; i++) {
+    try {
+      await tryStartCamera(tryList[i]);
+      // 成功
+      if (status) status.innerHTML = `<span style="color:var(--brown)">📷 ${t('對準 QR Code，自動辨識中…','Aim at the QR Code…')}</span>`;
+      if (fallbackBtn) fallbackBtn.style.display = 'none';
+      _scanLastTry = 0;
+      scanLoop();
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[scan] constraints ${i} 失敗:`, err.name || '(unknown)', err.message);
+      // 權限被拒就不要再 retry，使用者必須去設定開
+      if (['NotAllowedError','PermissionDeniedError','SecurityError'].includes(err.name)) break;
+    }
+  }
+
+  // 全部失敗 → cleanup + 顯示備援
+  _scanActive = false;
+  if (_scanStream) { try { _scanStream.getTracks().forEach(t => t.stop()); } catch (e) {} _scanStream = null; }
+  const denied = lastErr && ['NotAllowedError','PermissionDeniedError','SecurityError'].includes(lastErr.name);
+  if (status) {
+    status.innerHTML = denied
+      ? `<span style="color:#c0392b">⚠️ ${t('相機權限未開啟','Camera permission denied')}</span><br><span style="font-size:12px;color:#888">${t('iOS：設定 → Safari → 相機 → 允許','iOS: Settings → Safari → Camera → Allow')}</span>`
+      : `<span style="color:#c0392b">⚠️ ${t('相機啟動失敗，請改用拍照辨識','Camera failed to start, use photo')}</span>`;
+  }
+  if (fallbackBtn) fallbackBtn.style.display = 'block';
 }
 
 function stopLiveScan() {
   _scanActive = false;
+  _scanLoopStartTs = 0;
   if (_scanRaf) { cancelAnimationFrame(_scanRaf); _scanRaf = null; }
   if (_scanStream) {
-    _scanStream.getTracks().forEach(t => t.stop());
+    try { _scanStream.getTracks().forEach(t => t.stop()); } catch (e) {}
     _scanStream = null;
   }
   const video = document.getElementById('scan-video');
-  if (video) { try { video.pause(); video.srcObject = null; } catch (e) {} }
+  if (video) { try { video.pause(); video.srcObject = null; video.load?.(); } catch (e) {} }
 }
 
 async function scanLoop() {
   if (!_scanActive) return;
   const video = document.getElementById('scan-video');
   if (!video || video.readyState < 2 || video.videoWidth === 0) {
+    // 看門狗：第一次進 scanLoop 時記錄起點；若 4 秒內仍沒畫面 = WebKit 黑畫面 bug
+    if (!_scanLoopStartTs) _scanLoopStartTs = performance.now();
+    if (performance.now() - _scanLoopStartTs > 4000) {
+      console.warn('[scan] 4 秒內 video 仍無畫面，疑似 iOS WebKit 黑畫面 bug，退出並顯示備援');
+      _scanLoopStartTs = 0;
+      stopLiveScan();
+      const status = document.getElementById('scan-status');
+      const fallbackBtn = document.getElementById('scan-fallback-btn');
+      if (status) status.innerHTML = `<span style="color:#c0392b">⚠️ ${t('相機畫面異常（已啟動但無影像），請改用拍照','Camera black screen, use photo instead')}</span>`;
+      if (fallbackBtn) fallbackBtn.style.display = 'block';
+      return;
+    }
     _scanRaf = requestAnimationFrame(scanLoop); return;
   }
+  // 出畫面了就重置看門狗（之後 stop 時自然歸零）
+  _scanLoopStartTs = 0;
   // 節流：每 100ms 試一次（≈10 FPS）— 已經夠快又省電
   const now = performance.now();
   if (now - _scanLastTry < 100) { _scanRaf = requestAnimationFrame(scanLoop); return; }
